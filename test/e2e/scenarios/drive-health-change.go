@@ -215,7 +215,7 @@ func findSNByDriveLocation(driveList []unstructured.Unstructured, driveLocation 
 	return ""
 }
 
-// findNodeNameByUID finds node name according to its k8s uid
+// findNodeNameByUID finds node name according to its machineID
 // Receives k8s test framework and node uid
 // Returns node name or error if something went wrong
 func findNodeNameByUID(f *framework.Framework, nodeUID string) (string, error) {
@@ -225,7 +225,7 @@ func findNodeNameByUID(f *framework.Framework, nodeUID string) (string, error) {
 	}
 	var nodeName string
 	for _, node := range nodeList.Items {
-		if string(node.UID) == nodeUID {
+		if node.Status.NodeInfo.MachineID == nodeUID {
 			nodeName = node.Name
 			break
 		}

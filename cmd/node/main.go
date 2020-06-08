@@ -187,5 +187,5 @@ func getNodeUID(client k8sClient.Client, nodeName string) (string, error) {
 	if err := client.Get(context.Background(), k8sClient.ObjectKey{Name: nodeName}, &k8sNode); err != nil {
 		return "", err
 	}
-	return string(k8sNode.UID), nil
+	return k8sNode.Status.NodeInfo.MachineID, nil
 }
