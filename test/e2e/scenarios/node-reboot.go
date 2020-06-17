@@ -82,7 +82,7 @@ func DefineNodeRebootTestSuite(driver testsuites.TestDriver) {
 		containerToStop = pod.Spec.NodeName
 
 		// stop container
-		cmd := fmt.Sprintf("docker pause %s", containerToStop)
+		cmd := fmt.Sprintf("docker stop %s", containerToStop)
 		_, _, err = executor.RunCmd(cmd)
 		framework.ExpectNoError(err)
 
@@ -93,7 +93,7 @@ func DefineNodeRebootTestSuite(driver testsuites.TestDriver) {
 		}
 
 		// start container
-		cmd = fmt.Sprintf("docker unpause %s", containerToStop)
+		cmd = fmt.Sprintf("docker start %s", containerToStop)
 		_, _, err = executor.RunCmd(cmd)
 		framework.ExpectNoError(err)
 		started = true

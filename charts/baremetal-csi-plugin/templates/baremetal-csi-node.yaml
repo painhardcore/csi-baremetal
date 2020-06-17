@@ -62,6 +62,7 @@ spec:
           - "--volumemgrip=$(MY_POD_IP)"
           - "--namespace=$(NAMESPACE)"
           - --verbose={{ .Values.log.verbose }}
+          - --nodebinding={{ .Values.node.nodeBindingMode }}
           {{- if .Values.logReceiver.create  }}
           - "--logpath=/var/log/csi.log"
           {{- end }}

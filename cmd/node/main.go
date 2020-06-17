@@ -5,6 +5,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
@@ -41,6 +42,7 @@ var (
 	nodeID           = flag.String("nodeid", "", "node identification by k8s")
 	logPath          = flag.String("logpath", "", "Log path for Node Volume Manager service")
 	verboseLogs      = flag.Bool("verbose", false, "Debug mode in logs")
+	nodeBindingMode  = flag.String("nodebinding", "k8sUID", "How CSI identifies nodes")
 )
 
 func main() {
@@ -68,7 +70,7 @@ func main() {
 		logger.Fatalf("fail to create kubernetes client, error: %v", err)
 	}
 
-	nodeUID, err := getNodeUID(k8SClient, *nodeID)
+	nodeUID, err := getNodeUID(k8SClient, *nodeID, *nodeBindingMode)
 	if err != nil {
 		logger.Fatalf("fail to get uid of k8s Node object: %v", err)
 	}
@@ -182,10 +184,23 @@ func prepareCRDControllerManagers(volumeCtrl *node.CSINodeService, lvgCtrl *lvm.
 	return mgr
 }
 
-func getNodeUID(client k8sClient.Client, nodeName string) (string, error) {
+func getNodeUID(client k8sClient.Client, nodeName string, nodeBindingMode string) (string, error) {
 	k8sNode := corev1.Node{}
 	if err := client.Get(context.Background(), k8sClient.ObjectKey{Name: nodeName}, &k8sNode); err != nil {
 		return "", err
 	}
-	return k8sNode.Status.NodeInfo.MachineID, nil
+	switch strings.ToUpper(nodeBindingMode) {
+	case "SYSTEMUUID":
+		return k8sNode.Status.NodeInfo.SystemUUID, nil
+	case "K8SUID":
+		return string(k8sNode.UID), nil
+	case "NODENAME":
+		return nodeName, nil
+	case "MACHINEID":
+		return k8sNode.Status.NodeInfo.MachineID, nil
+	default:
+		return string(k8sNode.UID), nil
+	//case "PFM":
+		// implement after Machine CRD development
+	}
 }

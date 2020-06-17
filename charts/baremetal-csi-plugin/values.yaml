@@ -39,6 +39,7 @@ node:
         endpoint: tcp://localhost:8888
     server:
       port: 9999
+  nodeBindingMode: SystemUUID
 
 drivemgr:
   image:
