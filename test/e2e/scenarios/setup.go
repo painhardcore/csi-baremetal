@@ -39,10 +39,11 @@ var _ = utils.SIGDescribe("CSI Volumes", func() {
 
 	curDriver := BaremetalDriver()
 	ginkgo.Context(testsuites.GetDriverNameWithFeatureTags(curDriver), func() {
-		testsuites.DefineTestSuite(curDriver, CSITestSuites)
-		DefineDriveHealthChangeTestSuite(curDriver)
-		DefineControllerNodeFailTestSuite(curDriver)
-		DefineNodeRebootTestSuite(curDriver)
-		DefineDifferentSCTestSuite(curDriver)
+		DefineStressTestSuite(curDriver)
+		//testsuites.DefineTestSuite(curDriver, CSITestSuites)
+		//DefineDriveHealthChangeTestSuite(curDriver)
+		//DefineControllerNodeFailTestSuite(curDriver)
+		//DefineNodeRebootTestSuite(curDriver)
+		//DefineDifferentSCTestSuite(curDriver)
 	})
 })

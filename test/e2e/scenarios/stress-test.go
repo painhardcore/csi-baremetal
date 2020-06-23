@@ -43,7 +43,8 @@ func driveStressTest(driver testsuites.TestDriver) {
 
 	nodeList, err := f.ClientSet.CoreV1().Nodes().List(metav1.ListOptions{})
 	framework.ExpectNoError(err)
-	amountOfCSINodes := len(nodeList.Items)
+	// -1 because of control plane which is unscheduled for pods
+	amountOfCSINodes := len(nodeList.Items)-1
 
 	init := func() {
 		var (
