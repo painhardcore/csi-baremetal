@@ -39,12 +39,8 @@ func driveStressTest(driver testsuites.TestDriver) {
 		ns                string
 		f                 = framework.NewDefaultFramework("stress")
 		statefulSetSchema schema.GroupKind
+		amountOfCSINodes  int
 	)
-
-	nodeList, err := f.ClientSet.CoreV1().Nodes().List(metav1.ListOptions{})
-	framework.ExpectNoError(err)
-	// -1 because of control plane which is unscheduled for pods
-	amountOfCSINodes := len(nodeList.Items)-1
 
 	init := func() {
 		var (
@@ -54,6 +50,11 @@ func driveStressTest(driver testsuites.TestDriver) {
 		ns = f.Namespace.Name
 
 		perTestConf, driverCleanup = driver.PrepareTest(f)
+
+		nodeList, err := f.ClientSet.CoreV1().Nodes().List(metav1.ListOptions{})
+		framework.ExpectNoError(err)
+		// -1 because of control plane which is unscheduled for pods
+		amountOfCSINodes = len(nodeList.Items)-1
 
 		k8sSC = driver.(*baremetalDriver).GetDynamicProvisionStorageClass(perTestConf, "xfs")
 		k8sSC, err = f.ClientSet.StorageV1().StorageClasses().Create(k8sSC)
@@ -67,7 +68,7 @@ func driveStressTest(driver testsuites.TestDriver) {
 	cleanup := func() {
 		e2elog.Logf("Starting cleanup for test StressTest")
 
-		err = framework.DeleteResourceAndWaitForGC(f.ClientSet, statefulSetSchema, ns, ssName)
+		err := framework.DeleteResourceAndWaitForGC(f.ClientSet, statefulSetSchema, ns, ssName)
 		framework.ExpectNoError(err)
 
 		pvcList, err := f.ClientSet.CoreV1().PersistentVolumeClaims(ns).List(metav1.ListOptions{})
@@ -86,7 +87,7 @@ func driveStressTest(driver testsuites.TestDriver) {
 
 		ss := CreateStressTestStatefulSet(ns, int32(amountOfCSINodes), 3, k8sSC.Name,
 			driver.(testsuites.DynamicPVTestDriver).GetClaimSize())
-		ss, err = f.ClientSet.AppsV1().StatefulSets(ns).Create(ss)
+		ss, err := f.ClientSet.AppsV1().StatefulSets(ns).Create(ss)
 		framework.ExpectNoError(err)
 		statefulSetSchema = ss.GroupVersionKind().GroupKind()
 
