@@ -1,6 +1,9 @@
 # project name
 PROJECT          := baremetal-csi-plugin
 
+### all docker images will be pulled from that registry
+REGISTRY         :=
+
 ### file paths
 CHARTS_PATH		 := charts/baremetal-csi-plugin
 

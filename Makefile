@@ -15,19 +15,18 @@ dependency:
 
 ### Build binaries
 
-build: compile-proto build-drivemgr build-node build-controller
+build: compile-proto build-drivemgrs build-node build-controller
 
-build-drivemgr:
-ifeq ($(DRIVE_MANAGER_TYPE),)
-	# build all drivemanagers: TODO: do not build all binaries, AK8S-1125
-	go build -o ./build/${DRIVE_MANAGER}/hal-drivemgr ./cmd/${DRIVE_MANAGER}/halmgr/main.go
-	go build -o ./build/${DRIVE_MANAGER}/loopback-drivemgr ./cmd/${DRIVE_MANAGER}/loopbackmgr/main.go
-	go build -o ./build/${DRIVE_MANAGER}/idrac-drivemgr ./cmd/${DRIVE_MANAGER}/idracmgr/main.go
+build-base-drivemgr:
 	go build -o ./build/${DRIVE_MANAGER}/base-drivemgr ./cmd/${DRIVE_MANAGER}/basemgr/main.go
-endif
-ifneq ($(DRIVE_MANAGER_TYPE),)
-	go build -o ./build/${DRIVE_MANAGER}/${DRIVE_MANAGER} ./cmd/${DRIVE_MANAGER}/${DRIVE_MANAGER_TYPE}/main.go
-endif
+
+build-loopback-drivemgr:
+	go build -o ./build/${DRIVE_MANAGER}/loopback-drivemgr ./cmd/${DRIVE_MANAGER}/loopbackmgr/main.go
+
+build-idrac-drivemgr:
+	go build -o ./build/${DRIVE_MANAGER}/idrac-drivemgr ./cmd/${DRIVE_MANAGER}/idracmgr/main.go
+
+build-drivemgrs: build-base-drivemgr build-loopback-drivemgr build-idrac-drivemgr
 
 build-node:
 	CGO_ENABLED=0 GOOS=linux go build -o ./build/${NODE}/${NODE} ./cmd/${NODE}/main.go
