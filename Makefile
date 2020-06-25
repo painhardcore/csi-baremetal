@@ -82,15 +82,15 @@ image-controller:
 
 ### Push images
 
-push: push-drivemgr push-node push-controller
+push: push-drivemgrs push-node push-controller
 
-push-local:
-	docker push ${REGISTRY}/${PROJECT}-${DRIVE_MANAGER}:${TAG}
-	docker push ${REGISTRY}/${PROJECT}-${NODE}:${TAG}
-	docker push ${REGISTRY}/${PROJECT}-${CONTROLLER}:${TAG}
+push-drivemgrs: push-basemgr push-loopbackmgr
 
-push-drivemgr:
-	docker push ${REGISTRY}/${PROJECT}-${DRIVE_MANAGER}:${TAG}
+push-basemgr:
+	docker push ${REGISTRY}/${PROJECT}-basemgr:${TAG}
+
+push-loopbackmgr:
+	docker push ${REGISTRY}/${PROJECT}-loopbackmgr:${TAG}
 
 push-node:
 	docker push ${REGISTRY}/${PROJECT}-${NODE}:${TAG}
@@ -114,10 +114,11 @@ clean-controller:
 clean-proto:
 	rm -rf ./api/generated/v1/*
 
-clean-images: clean-image-drivemgr clean-image-node clean-image-controller
+clean-images: clean-images-drivemgr clean-image-node clean-image-controller
 
-clean-image-drivemgr:
-	docker rmi ${REGISTRY}/${PROJECT}-${DRIVE_MANAGER}:${TAG}
+clean-images-drivemgr:
+	docker rmi ${REGISTRY}/${PROJECT}-basemgr:${TAG}
+	docker rmi ${REGISTRY}/${PROJECT}-loopbackmgr:${TAG}
 
 clean-image-node:
 	docker rmi ${REGISTRY}/${PROJECT}-${NODE}:${TAG}

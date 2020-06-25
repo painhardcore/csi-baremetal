@@ -24,3 +24,8 @@ images-drivemgr: image-drivemgr-halmgr image-drivemgr-base image-drivemgr-loopba
 image-drivemgr-halmgr:
 	cp ./build/${DRIVE_MANAGER}/halmgr ./pkg/${DRIVE_MANAGER}/halmgr/
 	docker build --network host --force-rm --tag ${REGISTRY}/${PROJECT}-halmgr:${TAG} ./pkg/${DRIVE_MANAGER}/halmgr
+
+push-drivemgrs: push-halmgr push-basemgr push-loopbackmgr
+
+push-halmgr:
+	docker push ${REGISTRY}/${PROJECT}-halmgr:${TAG}
