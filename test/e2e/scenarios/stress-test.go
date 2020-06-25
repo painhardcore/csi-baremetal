@@ -10,7 +10,6 @@ import (
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/kubernetes/test/e2e/framework"
 	e2elog "k8s.io/kubernetes/test/e2e/framework/log"
 	e2epod "k8s.io/kubernetes/test/e2e/framework/pod"
@@ -34,12 +33,12 @@ func DefineStressTestSuite(driver testsuites.TestDriver) {
 // driveStressTest test checks behavior of driver under horizontal scale load (increase amount of nodes)
 func driveStressTest(driver testsuites.TestDriver) {
 	var (
-		k8sSC             *storagev1.StorageClass
-		driverCleanup     func()
-		ns                string
-		f                 = framework.NewDefaultFramework("stress")
-		statefulSetSchema schema.GroupKind
-		amountOfCSINodes  int
+		k8sSC               *storagev1.StorageClass
+		driverCleanup       func()
+		ns                  string
+		f                   = framework.NewDefaultFramework("stress")
+		statefulSetSelector metav1.LabelSelector
+		amountOfCSINodes    int
 	)
 
 	init := func() {
@@ -54,7 +53,7 @@ func driveStressTest(driver testsuites.TestDriver) {
 		nodeList, err := f.ClientSet.CoreV1().Nodes().List(metav1.ListOptions{})
 		framework.ExpectNoError(err)
 		// -1 because of control plane which is unscheduled for pods
-		amountOfCSINodes = len(nodeList.Items)-1
+		amountOfCSINodes = len(nodeList.Items) - 1
 
 		k8sSC = driver.(*baremetalDriver).GetDynamicProvisionStorageClass(perTestConf, "xfs")
 		k8sSC, err = f.ClientSet.StorageV1().StorageClasses().Create(k8sSC)
@@ -68,8 +67,15 @@ func driveStressTest(driver testsuites.TestDriver) {
 	cleanup := func() {
 		e2elog.Logf("Starting cleanup for test StressTest")
 
-		err := framework.DeleteResourceAndWaitForGC(f.ClientSet, statefulSetSchema, ns, ssName)
+		ssPods, err := f.PodClientNS(ns).List(metav1.ListOptions{LabelSelector: fmt.Sprintf("ss=%s", ssName)})
+
+		err = f.ClientSet.AppsV1().StatefulSets(ns).Delete(ssName, &metav1.DeleteOptions{})
 		framework.ExpectNoError(err)
+
+		for _, pod := range ssPods.Items {
+			err = f.WaitForPodNotFound(pod.Name, 3*time.Minute)
+			framework.ExpectNoError(err)
+		}
 
 		pvcList, err := f.ClientSet.CoreV1().PersistentVolumeClaims(ns).List(metav1.ListOptions{})
 		framework.ExpectNoError(err)
@@ -89,7 +95,7 @@ func driveStressTest(driver testsuites.TestDriver) {
 			driver.(testsuites.DynamicPVTestDriver).GetClaimSize())
 		ss, err := f.ClientSet.AppsV1().StatefulSets(ns).Create(ss)
 		framework.ExpectNoError(err)
-		statefulSetSchema = ss.GroupVersionKind().GroupKind()
+		statefulSetSelector = *ss.Spec.Selector
 
 		err = framework.WaitForStatefulSetReplicasReady(ss.Name, ns, f.ClientSet, 20*time.Second, 10*time.Minute)
 		framework.ExpectNoError(err)
@@ -133,7 +139,7 @@ func CreateStressTestStatefulSet(ns string, amountOfReplicas int32, volumesPerRe
 
 	podTemplate := corev1.PodTemplateSpec{
 		ObjectMeta: metav1.ObjectMeta{
-			Labels: map[string]string{"app": ssName},
+			Labels: map[string]string{"ss": ssName},
 		},
 		Spec: corev1.PodSpec{
 			Containers: []corev1.Container{
@@ -152,7 +158,7 @@ func CreateStressTestStatefulSet(ns string, amountOfReplicas int32, volumesPerRe
 							LabelSelector: &metav1.LabelSelector{
 								MatchExpressions: []metav1.LabelSelectorRequirement{
 									{
-										Key:      "app",
+										Key:      "ss",
 										Operator: "In",
 										Values:   []string{ssName},
 									},
@@ -174,7 +180,7 @@ func CreateStressTestStatefulSet(ns string, amountOfReplicas int32, volumesPerRe
 		Spec: appsv1.StatefulSetSpec{
 			Replicas: &amountOfReplicas,
 			Selector: &metav1.LabelSelector{
-				MatchLabels: map[string]string{"app": ssName},
+				MatchLabels: map[string]string{"ss": ssName},
 			},
 			Template:             podTemplate,
 			VolumeClaimTemplates: pvcs,
