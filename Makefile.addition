@@ -9,15 +9,18 @@ install-hal:
 	sudo zypper --no-gpg-checks --non-interactive install --auto-agree-with-licenses --no-recommends http://asdrepo.isus.emc.com:8081/artifactory/ecs-prerelease-local/com/emc/asd/vipr/sles12/viprhal/viprhal-devel/viprhal-${HAL_VERSION}-go.SLES/viprhal-devel-${HAL_VERSION}.SLES.x86_64.rpm
 
 build-hal-drivemgr:
-	go build -o ./build/${DRIVE_MANAGER}/hal-drivemgr ./cmd/${DRIVE_MANAGER}/halmgr/main.go
+	go build -o ./build/${DRIVE_MANAGER}/halmgr ./cmd/${DRIVE_MANAGER}/halmgr/main.go
 
 build-drivemgrs: build-hal-drivemgr build-base-drivemgr build-loopback-drivemgr build-idrac-drivemgr
 
-base-images: base-image-haldrivemgr base-image-basemgr base-image-loopbackmgr base-image-node base-image-controller
-
 base-image-haldrivemgr:
 	docker build --network host --force-rm --file ./pkg/${DRIVE_MANAGER}/halmgr/Dockerfile.build \
-	--tag hal-drivemgr:base ./pkg/${DRIVE_MANAGER}/halmgr/
+	--tag halmgr:base ./pkg/${DRIVE_MANAGER}/halmgr/
 
-image-haldrivemgr:
+base-images: base-image-haldrivemgr base-image-basemgr base-image-loopbackmgr base-image-node base-image-controller
 
+images-drivemgr: image-drivemgr-halmgr image-drivemgr-base image-drivemgr-loopback
+
+image-drivemgr-halmgr:
+	cp ./build/${DRIVE_MANAGER}/halmgr ./pkg/${DRIVE_MANAGER}/halmgr/
+	docker build --network host --force-rm --tag ${REGISTRY}/${PROJECT}-halmgr:${TAG} ./pkg/${DRIVE_MANAGER}/halmgr

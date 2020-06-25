@@ -36,7 +36,7 @@ build-controller:
 
 ### Build images
 
-images: image-drivemgr image-node image-controller
+images: images-drivemgr image-node image-controller
 
 base-images: base-image-basemgr base-image-loopbackmgr base-image-node base-image-controller
 
@@ -47,9 +47,6 @@ base-image-basemgr:
 base-image-loopbackmgr:
 	docker build --network host --force-rm --file ./pkg/${DRIVE_MANAGER}/loopbackmgr/Dockerfile.build \
     --tag loopbackmgr:base ./pkg/${DRIVE_MANAGER}/loopbackmgr/
-
-base-image-drivemgr:
-	docker build --network host --force-rm --file ./pkg/${DRIVE_MANAGER}/Dockerfile.build --tag ${DRIVE_MANAGER}:base ./pkg/${DRIVE_MANAGER}
 
 download-grpc-health-probe:
 	curl -OJL ${HEALTH_PROBE_BIN_URL}
@@ -67,20 +64,13 @@ base-image-controller:
 
 image-drivemgr-base:
 	cp ./build/${DRIVE_MANAGER}/basemgr ./pkg/${DRIVE_MANAGER}/basemgr/
-    #docker build --network host --force-rm --tag ${REGISTRY}/${PROJECT}-${DRIVE_MANAGER}:${TAG}
+	docker build --network host --force-rm --tag ${REGISTRY}/${PROJECT}-basemgr:${TAG} ./pkg/${DRIVE_MANAGER}/basemgr
 
 image-drivemgr-loopback:
-	cp ./build/${DRIVE_MANAGER}/basemgr ./pkg/${DRIVE_MANAGER}/loopbackmgr/
-    #docker build --network host --force-rm --tag ${REGISTRY}/${PROJECT}-basemgr:${TAG} ./pkg/${DRIVE_MANAGER}/$(DRIVE_MANAGER_TYPE)/
+	cp ./build/${DRIVE_MANAGER}/loopbackmgr ./pkg/${DRIVE_MANAGER}/loopbackmgr/
+	docker build --network host --force-rm --tag ${REGISTRY}/${PROJECT}-loopbackmgr:${TAG} ./pkg/${DRIVE_MANAGER}/loopbackmgr
 
-image-drivemgr: image-drivemgr-base image-drivemgr-loopback
-ifeq ($(DRIVE_MANAGER_TYPE), basemgr)
-	cp ./build/${DRIVE_MANAGER}/${DRIVE_MANAGER} ./pkg/${DRIVE_MANAGER}/$(DRIVE_MANAGER_TYPE)/
-	docker build --network host --force-rm --tag ${REGISTRY}/${PROJECT}-${DRIVE_MANAGER}:${TAG} ./pkg/${DRIVE_MANAGER}/$(DRIVE_MANAGER_TYPE)/
-else
-	cp ./build/${DRIVE_MANAGER}/* ./pkg/${DRIVE_MANAGER}/
-	docker build --network host --force-rm --tag ${REGISTRY}/${PROJECT}-${DRIVE_MANAGER}:${TAG} ./pkg/${DRIVE_MANAGER}
-endif
+images-drivemgr: image-drivemgr-base image-drivemgr-loopback
 
 image-node:
 	cp ./build/${NODE}/${NODE} ./pkg/${NODE}/${NODE}
@@ -153,7 +143,7 @@ install-controller-gen:
 
 compile-proto:
 	mkdir -p api/generated/v1/
-	#protoc -I=api/v1 --go_out=plugins=grpc:api/generated/v1 api/v1/*.proto
+	protoc -I=api/v1 --go_out=plugins=grpc:api/generated/v1 api/v1/*.proto
 
 generate-deepcopy:
 	# Generate deepcopy functions for CRD

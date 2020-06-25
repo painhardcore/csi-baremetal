@@ -1,8 +1,8 @@
-FROM    hal-drivemgr:base
+FROM    halmgr:base
 
 LABEL   description="Bare-metal CSI Drive Manager Service base on HAL"
 
-COPY    hal-drivemgr hal-drivemgr
+COPY    halmgr hal-drivemgr
 
 EXPOSE  8888
 
