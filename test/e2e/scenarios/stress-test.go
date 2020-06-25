@@ -38,7 +38,6 @@ func driveStressTest(driver testsuites.TestDriver) {
 		driverCleanup       func()
 		ns                  string
 		f                   = framework.NewDefaultFramework("stress")
-		statefulSetSelector metav1.LabelSelector
 		amountOfCSINodes    int
 	)
 
@@ -75,6 +74,8 @@ func driveStressTest(driver testsuites.TestDriver) {
 
 		var wg sync.WaitGroup
 
+		// Kubernetes e2e test framework hasn't native methods to wait for StatefulSet deletion
+		// So it's needed to wait for each pod to be deleted manually after SS deletion
 		for _, pod := range ssPods.Items {
 			podCopy := pod
 			wg.Add(1)
@@ -97,7 +98,7 @@ func driveStressTest(driver testsuites.TestDriver) {
 		common.CleanupAfterCustomTest(f, driverCleanup, nil, pvcPointersList)
 	}
 
-	ginkgo.It("should serve DaemonSet on multi node cluster", func() {
+	ginkgo.It("should serve StatefulSet on multi node cluster", func() {
 		init()
 		defer cleanup()
 
@@ -105,13 +106,16 @@ func driveStressTest(driver testsuites.TestDriver) {
 			driver.(testsuites.DynamicPVTestDriver).GetClaimSize())
 		ss, err := f.ClientSet.AppsV1().StatefulSets(ns).Create(ss)
 		framework.ExpectNoError(err)
-		statefulSetSelector = *ss.Spec.Selector
 
 		err = framework.WaitForStatefulSetReplicasReady(ss.Name, ns, f.ClientSet, 20*time.Second, 10*time.Minute)
 		framework.ExpectNoError(err)
 	})
 }
 
+// CreateStressTestStatefulSet creates StatefulSet manifest for test purposes
+// Receives namespace as ns, amount of SS replicas, amount of PVCs per replica, name of StorageClass that serves PVCs,
+// size of PVCs.
+// Returns instance of appsv1.StatefulSet
 func CreateStressTestStatefulSet(ns string, amountOfReplicas int32, volumesPerReplica int, scName string,
 	claimSize string) *appsv1.StatefulSet {
 	pvcs := make([]corev1.PersistentVolumeClaim, volumesPerReplica)
