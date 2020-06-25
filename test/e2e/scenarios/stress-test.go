@@ -2,6 +2,7 @@ package scenarios
 
 import (
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/onsi/ginkgo"
@@ -72,10 +73,19 @@ func driveStressTest(driver testsuites.TestDriver) {
 		err = f.ClientSet.AppsV1().StatefulSets(ns).Delete(ssName, &metav1.DeleteOptions{})
 		framework.ExpectNoError(err)
 
+		var wg sync.WaitGroup
+
 		for _, pod := range ssPods.Items {
-			err = f.WaitForPodNotFound(pod.Name, 3*time.Minute)
-			framework.ExpectNoError(err)
+			podCopy := pod
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				err = f.WaitForPodNotFound(podCopy.Name, 2*time.Minute)
+				framework.ExpectNoError(err)
+			}()
 		}
+
+		wg.Wait()
 
 		pvcList, err := f.ClientSet.CoreV1().PersistentVolumeClaims(ns).List(metav1.ListOptions{})
 		framework.ExpectNoError(err)
