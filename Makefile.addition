@@ -1,3 +1,4 @@
+### This file should't be used as is, it only be imported in Makefile and it will be extended his targets.
 include variables.mk
 
 .PHONY: install-hal
@@ -10,4 +11,13 @@ install-hal:
 build-hal-drivemgr:
 	go build -o ./build/${DRIVE_MANAGER}/hal-drivemgr ./cmd/${DRIVE_MANAGER}/halmgr/main.go
 
-build-drivemgrs: build-base-drivemgr build-loopback-drivemgr build-idrac-drivemgr build-hal-drivemgr
+build-drivemgrs: build-hal-drivemgr build-base-drivemgr build-loopback-drivemgr build-idrac-drivemgr
+
+base-images: base-image-haldrivemgr base-image-basemgr base-image-loopbackmgr base-image-node base-image-controller
+
+base-image-haldrivemgr:
+	docker build --network host --force-rm --file ./pkg/${DRIVE_MANAGER}/halmgr/Dockerfile.build \
+	--tag hal-drivemgr:base ./pkg/${DRIVE_MANAGER}/halmgr/
+
+image-haldrivemgr:
+

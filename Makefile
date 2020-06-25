@@ -18,13 +18,13 @@ dependency:
 build: compile-proto build-drivemgrs build-node build-controller
 
 build-base-drivemgr:
-	go build -o ./build/${DRIVE_MANAGER}/base-drivemgr ./cmd/${DRIVE_MANAGER}/basemgr/main.go
+	go build -o ./build/${DRIVE_MANAGER}/basemgr ./cmd/${DRIVE_MANAGER}/basemgr/main.go
 
 build-loopback-drivemgr:
-	go build -o ./build/${DRIVE_MANAGER}/loopback-drivemgr ./cmd/${DRIVE_MANAGER}/loopbackmgr/main.go
+	go build -o ./build/${DRIVE_MANAGER}/loopbackmgr ./cmd/${DRIVE_MANAGER}/loopbackmgr/main.go
 
 build-idrac-drivemgr:
-	go build -o ./build/${DRIVE_MANAGER}/idrac-drivemgr ./cmd/${DRIVE_MANAGER}/idracmgr/main.go
+	go build -o ./build/${DRIVE_MANAGER}/idracmgr ./cmd/${DRIVE_MANAGER}/idracmgr/main.go
 
 build-drivemgrs: build-base-drivemgr build-loopback-drivemgr build-idrac-drivemgr
 
@@ -38,14 +38,18 @@ build-controller:
 
 images: image-drivemgr image-node image-controller
 
-base-images: base-image-drivemgr base-image-node base-image-controller
+base-images: base-image-basemgr base-image-loopbackmgr base-image-node base-image-controller
+
+base-image-basemgr:
+	docker build --network host --force-rm --file ./pkg/${DRIVE_MANAGER}/basemgr/Dockerfile.build \
+	--tag basemgr:base ./pkg/${DRIVE_MANAGER}/basemgr/
+
+base-image-loopbackmgr:
+	docker build --network host --force-rm --file ./pkg/${DRIVE_MANAGER}/loopbackmgr/Dockerfile.build \
+    --tag loopbackmgr:base ./pkg/${DRIVE_MANAGER}/loopbackmgr/
 
 base-image-drivemgr:
-ifeq ($(DRIVE_MANAGER_TYPE), basemgr)
-	docker build --network host --force-rm --file ./pkg/${DRIVE_MANAGER}/$(DRIVE_MANAGER_TYPE)/Dockerfile.build --tag ${DRIVE_MANAGER_TYPE}:base ./pkg/${DRIVE_MANAGER}/$(DRIVE_MANAGER_TYPE)/
-else
 	docker build --network host --force-rm --file ./pkg/${DRIVE_MANAGER}/Dockerfile.build --tag ${DRIVE_MANAGER}:base ./pkg/${DRIVE_MANAGER}
-endif
 
 download-grpc-health-probe:
 	curl -OJL ${HEALTH_PROBE_BIN_URL}
@@ -61,7 +65,15 @@ base-image-node: download-grpc-health-probe
 base-image-controller:
 	docker build --network host --force-rm --file ./pkg/${CONTROLLER}/Dockerfile.build --tag ${CONTROLLER}:base ./pkg/${CONTROLLER}
 
-image-drivemgr:
+image-drivemgr-base:
+	cp ./build/${DRIVE_MANAGER}/basemgr ./pkg/${DRIVE_MANAGER}/basemgr/
+    #docker build --network host --force-rm --tag ${REGISTRY}/${PROJECT}-${DRIVE_MANAGER}:${TAG}
+
+image-drivemgr-loopback:
+	cp ./build/${DRIVE_MANAGER}/basemgr ./pkg/${DRIVE_MANAGER}/loopbackmgr/
+    #docker build --network host --force-rm --tag ${REGISTRY}/${PROJECT}-basemgr:${TAG} ./pkg/${DRIVE_MANAGER}/$(DRIVE_MANAGER_TYPE)/
+
+image-drivemgr: image-drivemgr-base image-drivemgr-loopback
 ifeq ($(DRIVE_MANAGER_TYPE), basemgr)
 	cp ./build/${DRIVE_MANAGER}/${DRIVE_MANAGER} ./pkg/${DRIVE_MANAGER}/$(DRIVE_MANAGER_TYPE)/
 	docker build --network host --force-rm --tag ${REGISTRY}/${PROJECT}-${DRIVE_MANAGER}:${TAG} ./pkg/${DRIVE_MANAGER}/$(DRIVE_MANAGER_TYPE)/
@@ -141,7 +153,7 @@ install-controller-gen:
 
 compile-proto:
 	mkdir -p api/generated/v1/
-	protoc -I=api/v1 --go_out=plugins=grpc:api/generated/v1 api/v1/*.proto
+	#protoc -I=api/v1 --go_out=plugins=grpc:api/generated/v1 api/v1/*.proto
 
 generate-deepcopy:
 	# Generate deepcopy functions for CRD
