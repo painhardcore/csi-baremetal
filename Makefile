@@ -59,13 +59,14 @@ base-image-node: download-grpc-health-probe
 	cp ./build/${HEALTH_PROBE} ./pkg/${NODE}/${HEALTH_PROBE}
 	docker build --network host --force-rm --file ./pkg/${NODE}/Dockerfile.build --tag ${NODE}:base ./pkg/${NODE}
 
-base-image-controller:
+base-image-controller: download-grpc-health-probe
+	cp ./build/${HEALTH_PROBE} ./pkg/${CONTROLLER}/${HEALTH_PROBE}
 	docker build --network host --force-rm --file ./pkg/${CONTROLLER}/Dockerfile.build --tag ${CONTROLLER}:base ./pkg/${CONTROLLER}
 
 image-drivemgr:
 ifeq ($(DRIVE_MANAGER_TYPE), basemgr)
-	cp ./build/${DRIVE_MANAGER}/${DRIVE_MANAGER} ./pkg/${DRIVE_MANAGER}/$(DRIVE_MANAGER_TYPE)/
-	docker build --network host --force-rm --tag ${REGISTRY}/${PROJECT}-${DRIVE_MANAGER}:${TAG} ./pkg/${DRIVE_MANAGER}/$(DRIVE_MANAGER_TYPE)/
+	cp ./build/${DRIVE_MANAGER}/base-drivemgr ./pkg/${DRIVE_MANAGER}/$(DRIVE_MANAGER_TYPE)/
+	docker build --network host --force-rm --tag ${REGISTRY}/${PROJECT}-$(DRIVE_MANAGER_TYPE):${TAG} ./pkg/${DRIVE_MANAGER}/$(DRIVE_MANAGER_TYPE)/
 else
 	cp ./build/${DRIVE_MANAGER}/* ./pkg/${DRIVE_MANAGER}/
 	docker build --network host --force-rm --tag ${REGISTRY}/${PROJECT}-${DRIVE_MANAGER}:${TAG} ./pkg/${DRIVE_MANAGER}
