@@ -34,11 +34,11 @@ func DefineStressTestSuite(driver testsuites.TestDriver) {
 // driveStressTest test checks behavior of driver under horizontal scale load (increase amount of nodes)
 func driveStressTest(driver testsuites.TestDriver) {
 	var (
-		k8sSC               *storagev1.StorageClass
-		driverCleanup       func()
-		ns                  string
-		f                   = framework.NewDefaultFramework("stress")
-		amountOfCSINodes    int
+		k8sSC            *storagev1.StorageClass
+		driverCleanup    func()
+		ns               string
+		f                = framework.NewDefaultFramework("stress")
+		amountOfCSINodes int
 	)
 
 	init := func() {
