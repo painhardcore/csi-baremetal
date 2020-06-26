@@ -19,7 +19,7 @@ import (
 	"eos2git.cec.lab.emc.com/ECS/baremetal-csi-plugin.git/test/e2e/common"
 )
 
-var ssName = "stress-test-ss"
+var stsName = "stress-test-sts"
 
 // DefineStressTestSuite defines custom baremetal-csi stress test
 func DefineStressTestSuite(driver testsuites.TestDriver) {
@@ -67,9 +67,9 @@ func driveStressTest(driver testsuites.TestDriver) {
 	cleanup := func() {
 		e2elog.Logf("Starting cleanup for test StressTest")
 
-		ssPods, err := f.PodClientNS(ns).List(metav1.ListOptions{LabelSelector: fmt.Sprintf("ss=%s", ssName)})
+		ssPods, err := f.PodClientNS(ns).List(metav1.ListOptions{LabelSelector: fmt.Sprintf("sts=%s", stsName)})
 
-		err = f.ClientSet.AppsV1().StatefulSets(ns).Delete(ssName, &metav1.DeleteOptions{})
+		err = f.ClientSet.AppsV1().StatefulSets(ns).Delete(stsName, &metav1.DeleteOptions{})
 		framework.ExpectNoError(err)
 
 		var wg sync.WaitGroup
@@ -153,7 +153,7 @@ func CreateStressTestStatefulSet(ns string, amountOfReplicas int32, volumesPerRe
 
 	podTemplate := corev1.PodTemplateSpec{
 		ObjectMeta: metav1.ObjectMeta{
-			Labels: map[string]string{"ss": ssName},
+			Labels: map[string]string{"sts": stsName},
 		},
 		Spec: corev1.PodSpec{
 			Containers: []corev1.Container{
@@ -172,9 +172,9 @@ func CreateStressTestStatefulSet(ns string, amountOfReplicas int32, volumesPerRe
 							LabelSelector: &metav1.LabelSelector{
 								MatchExpressions: []metav1.LabelSelectorRequirement{
 									{
-										Key:      "ss",
+										Key:      "sts",
 										Operator: "In",
-										Values:   []string{ssName},
+										Values:   []string{stsName},
 									},
 								},
 							},
@@ -188,17 +188,17 @@ func CreateStressTestStatefulSet(ns string, amountOfReplicas int32, volumesPerRe
 
 	return &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      ssName,
+			Name:      stsName,
 			Namespace: ns,
 		},
 		Spec: appsv1.StatefulSetSpec{
 			Replicas: &amountOfReplicas,
 			Selector: &metav1.LabelSelector{
-				MatchLabels: map[string]string{"ss": ssName},
+				MatchLabels: map[string]string{"sts": stsName},
 			},
 			Template:             podTemplate,
 			VolumeClaimTemplates: pvcs,
-			ServiceName:          ssName,
+			ServiceName:          stsName,
 			PodManagementPolicy:  "Parallel",
 		},
 	}
