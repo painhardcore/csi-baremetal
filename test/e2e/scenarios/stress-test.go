@@ -23,7 +23,7 @@ var ssName = "stress-test-ss"
 
 // DefineStressTestSuite defines custom baremetal-csi stress test
 func DefineStressTestSuite(driver testsuites.TestDriver) {
-	ginkgo.Context("Baremetal-csi drive health change tests", func() {
+	ginkgo.Context("Baremetal-csi stress test", func() {
 		// Test scenario:
 		// Create StatefulSet with replicas count which is equal to kind node count
 		// Each replica should consume all loop devices from the node in HDD SC
