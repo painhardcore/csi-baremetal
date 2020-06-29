@@ -6,7 +6,9 @@ import (
 	"io/ioutil"
 	"os"
 	"strings"
+	"sync"
 
+	"github.com/fsnotify/fsnotify"
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v2"
@@ -55,6 +57,7 @@ type LoopBackManager struct {
 	nodeID   string
 	devices  []*LoopBackDevice
 	config   *Config
+	sync.RWMutex
 }
 
 // LoopBackDevice struct contains fields to describe a loop device bound with a file
@@ -89,7 +92,7 @@ type Config struct {
 // NewLoopBackManager is the constructor for LoopBackManager
 // Receives CmdExecutor to execute os commands such as 'losetup' and logrus logger
 // Returns an instance of LoopBackManager
-func NewLoopBackManager(exec command.CmdExecutor, logger *logrus.Logger) *LoopBackManager {
+func NewLoopBackManager(exec command.CmdExecutor, fsw *fsnotify.Watcher, logger *logrus.Logger) *LoopBackManager {
 	// read hostname variable - this is pod's name.
 	// since pod might restart and change name better to user real hostname
 	hostname := os.Getenv("HOSTNAME")
@@ -117,6 +120,10 @@ func NewLoopBackManager(exec command.CmdExecutor, logger *logrus.Logger) *LoopBa
 
 	mgr.updateDevicesFromConfig()
 
+	if fsw != nil {
+		go mgr.updateOnConfigChange(fsw, logger)
+	}
+
 	exec.SetLogger(logger)
 
 	return mgr
@@ -126,6 +133,8 @@ func NewLoopBackManager(exec command.CmdExecutor, logger *logrus.Logger) *LoopBa
 // The main purpose of method to make LoopBackManager support node rebooting and prevent the creation of new files over
 // existing ones
 func (mgr *LoopBackManager) attemptToRecoverDevices(imagesPath string) {
+	mgr.Lock()
+	defer mgr.Unlock()
 	ll := mgr.log.WithField("method", "attemptToRecoveryDevices")
 
 	entries, err := ioutil.ReadDir(imagesPath)
@@ -244,6 +253,8 @@ func (mgr *LoopBackManager) readAndSetConfig(path string) {
 // according to this config. If manager's devices weren't initialized and config is empty then the method initializes
 // them with local default settings.
 func (mgr *LoopBackManager) updateDevicesFromConfig() {
+	mgr.Lock()
+	defer mgr.Unlock()
 	ll := mgr.log.WithField("method", "updateDevicesFromConfig")
 
 	mgr.readAndSetConfig(configPath)
@@ -407,7 +418,9 @@ func (mgr *LoopBackManager) deleteLoopbackDevice(device *LoopBackDevice) {
 
 // Init creates files and register them as loopback devices
 // Returns error if something went wrong
-func (mgr *LoopBackManager) Init() (err error) {
+func (mgr *LoopBackManager) Init() {
+	mgr.Lock()
+	defer mgr.Unlock()
 	ll := mgr.log.WithField("method", "Init")
 	var device string
 
@@ -477,17 +490,14 @@ func (mgr *LoopBackManager) Init() (err error) {
 		device, _ = mgr.GetLoopBackDeviceName(file)
 		mgr.devices[i].devicePath = device
 	}
-	return nil
 }
 
 // GetDrivesList returns list of loopback devices as *api.Drive slice
 // Returns *api.Drive slice or error if something went wrong
 func (mgr *LoopBackManager) GetDrivesList() ([]*api.Drive, error) {
-	// TODO AK8S-896 Make process of config updating asynchronous
-	mgr.updateDevicesFromConfig()
-	if err := mgr.Init(); err != nil {
-		mgr.log.WithField("method", "GetDrivesList").Errorf("Failed to init devices: %v", err)
-	}
+	mgr.RLock()
+	defer mgr.RUnlock()
+
 	drives := make([]*api.Drive, 0)
 	for i := 0; i < len(mgr.devices); i++ {
 		var driveStatus string
@@ -537,5 +547,25 @@ func (mgr *LoopBackManager) GetLoopBackDeviceName(file string) (string, error) {
 func (mgr *LoopBackManager) CleanupLoopDevices() {
 	for _, device := range mgr.devices {
 		mgr.deleteLoopbackDevice(device)
+	}
+}
+
+// updateOnConfigChange triggers updateDevicesFromConfig() on Write or Create FS Events
+func (mgr *LoopBackManager) updateOnConfigChange(watcher *fsnotify.Watcher, logger *logrus.Logger) {
+	err := watcher.Add(configPath)
+	if err != nil {
+		logger.Fatalf("Can't add config to file watcher %s", err)
+	}
+	for {
+		event, ok := <-watcher.Events
+		if !ok {
+			logger.Info("file watcher is closed")
+			return
+		}
+		if event.Op == fsnotify.Write || event.Op == fsnotify.Create {
+			logger.Infof("Triggering updateDevicesFromConfig on %s event", event.Op)
+			mgr.updateDevicesFromConfig()
+			mgr.Init()
+		}
 	}
 }
