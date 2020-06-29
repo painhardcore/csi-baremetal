@@ -50,10 +50,7 @@ func driveStressTest(driver testsuites.TestDriver) {
 
 		perTestConf, driverCleanup = driver.PrepareTest(f)
 
-		nodeList, err := f.ClientSet.CoreV1().Nodes().List(metav1.ListOptions{})
-		framework.ExpectNoError(err)
-		// -1 because of control plane which is unscheduled for pods
-		amountOfCSINodes = len(nodeList.Items) - 1
+		amountOfCSINodes = len(framework.GetReadySchedulableNodesOrDie(f.ClientSet).Items)
 
 		k8sSC = driver.(*baremetalDriver).GetDynamicProvisionStorageClass(perTestConf, "xfs")
 		k8sSC, err = f.ClientSet.StorageV1().StorageClasses().Create(k8sSC)
@@ -74,7 +71,7 @@ func driveStressTest(driver testsuites.TestDriver) {
 
 		var wg sync.WaitGroup
 
-		// Kubernetes e2e test framework hasn't native methods to wait for StatefulSet deletion
+		// Kubernetes e2e test framework doesn't have native methods to wait for StatefulSet deletion
 		// So it's needed to wait for each pod to be deleted manually after SS deletion
 		for _, pod := range ssPods.Items {
 			podCopy := pod
