@@ -15,9 +15,14 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
 	k8sError "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/utils/keymutex"
 
 	api "eos2git.cec.lab.emc.com/ECS/baremetal-csi-plugin.git/api/generated/v1"
 	apiV1 "eos2git.cec.lab.emc.com/ECS/baremetal-csi-plugin.git/api/v1"
+	accrd "eos2git.cec.lab.emc.com/ECS/baremetal-csi-plugin.git/api/v1/availablecapacitycrd"
+	"eos2git.cec.lab.emc.com/ECS/baremetal-csi-plugin.git/api/v1/drivecrd"
+	"eos2git.cec.lab.emc.com/ECS/baremetal-csi-plugin.git/api/v1/lvgcrd"
+	"eos2git.cec.lab.emc.com/ECS/baremetal-csi-plugin.git/api/v1/volumecrd"
 	"eos2git.cec.lab.emc.com/ECS/baremetal-csi-plugin.git/pkg/base"
 	"eos2git.cec.lab.emc.com/ECS/baremetal-csi-plugin.git/pkg/base/command"
 	"eos2git.cec.lab.emc.com/ECS/baremetal-csi-plugin.git/pkg/base/k8s"
@@ -37,6 +42,9 @@ type CSINodeService struct {
 	VolumeManager
 	csi.IdentityServer
 	grpc_health_v1.HealthServer
+
+	// used for locking requests on each volume
+	volMu keymutex.KeyMutex
 }
 
 const (
@@ -59,6 +67,7 @@ func NewCSINodeService(client api.DriveServiceClient, nodeID string, logger *log
 		VolumeManager:  *NewVolumeManager(client, e, logger, k8sclient, recorder, nodeID),
 		svc:            common.NewVolumeOperationsImpl(k8sclient, logger),
 		IdentityServer: controller.NewIdentityServer(base.PluginName, base.PluginVersion),
+		volMu:          keymutex.NewHashed(0),
 	}
 	s.log = logger.WithField("component", "CSINodeService")
 	return s
@@ -68,10 +77,10 @@ func NewCSINodeService(client api.DriveServiceClient, nodeID string, logger *log
 // This method checks if CSI driver is ready to serve requests
 // overrides same method from identityServer struct in controller package
 func (s *CSINodeService) Probe(context.Context, *csi.ProbeRequest) (*csi.ProbeResponse, error) {
-	// TODO: AK8S-1143 implement smart checking of Node liveness condition
+	alive := s.checkK8SClient()
 	return &csi.ProbeResponse{
 		Ready: &wrappers.BoolValue{
-			Value: s.initialized,
+			Value: alive,
 		},
 	}, nil
 }
@@ -85,6 +94,20 @@ func (s *CSINodeService) NodeStageVolume(ctx context.Context, req *csi.NodeStage
 		"method":   "NodeStageVolume",
 		"volumeID": req.GetVolumeId(),
 	})
+
+	ll.Infof("locking volume on request: %v", req)
+	s.volMu.LockKey(req.GetVolumeId())
+	defer func() {
+		err := s.volMu.UnlockKey(req.GetVolumeId())
+		if err != nil {
+			ll.Warnf("Unlocking  volume with error %s", err)
+		}
+	}()
+	select {
+	case <-ctx.Done():
+		return nil, fmt.Errorf("context is done after volume lock. err: %s", ctx.Err())
+	default:
+	}
 
 	ll.Infof("Processing request: %v", req)
 
@@ -107,8 +130,13 @@ func (s *CSINodeService) NodeStageVolume(ctx context.Context, req *csi.NodeStage
 		return nil, status.Error(codes.NotFound, message)
 	}
 
-	if volumeCR.Spec.CSIStatus == apiV1.Failed {
-		return nil, fmt.Errorf("corresponding volume CR %s reached failed status", volumeCR.Spec.Id)
+	currStatus := volumeCR.Spec.CSIStatus
+	// if currStatus not in [Created (first call), VolumeReady (retry), Published (multiple pods)]
+	if currStatus != apiV1.Created && currStatus != apiV1.VolumeReady && currStatus != apiV1.Published {
+		ll.Errorf("Current volume CR status - %s, expected to be in - [%s, %s, %s]",
+			currStatus, apiV1.Created, apiV1.VolumeReady, apiV1.Published)
+		return nil, fmt.Errorf("corresponding volume CR is in unexpected state - %s",
+			currStatus)
 	}
 
 	targetPath := req.StagingTargetPath
@@ -117,15 +145,6 @@ func (s *CSINodeService) NodeStageVolume(ctx context.Context, req *csi.NodeStage
 	if err != nil {
 		ll.Errorf("failed to get partition, for volume %v: %v", volumeCR.Spec, err)
 		return nil, status.Error(codes.Internal, "failed to stage volume: partition error")
-	}
-
-	if volumeCR.Spec.CSIStatus == apiV1.VolumeReady {
-		ll.Info("Perform mount operation")
-		if err := s.fsOps.Mount(partition, targetPath); err != nil {
-			ll.Errorf("Failed to stage volume %s, error: %v", volumeCR.Spec.Id, err)
-			return nil, status.Error(codes.Internal, "failed to stage volume: mount error")
-		}
-		return &csi.NodeStageVolumeResponse{}, nil
 	}
 	ll.Infof("Work with partition %s", partition)
 
@@ -137,13 +156,15 @@ func (s *CSINodeService) NodeStageVolume(ctx context.Context, req *csi.NodeStage
 	if err := s.fsOps.PrepareAndPerformMount(partition, targetPath, false); err != nil {
 		ll.Errorf("Unable to prepare and mount: %v. Going to set volumes status to failed", err)
 		newStatus = apiV1.Failed
-		resp, errToReturn = nil, fmt.Errorf("failed to stage volume")
+		resp, errToReturn = nil, status.Error(codes.Internal, "failed to stage volume: mount error")
 	}
 
-	volumeCR.Spec.CSIStatus = newStatus
-	if err := s.crHelper.UpdateVolumeCRSpec(volumeCR.Name, volumeCR.Spec); err != nil {
-		ll.Errorf("Unable to set volume status to %s: %v", newStatus, err)
-		resp, errToReturn = nil, fmt.Errorf("failed to stage volume: update volume CR error")
+	if currStatus != apiV1.VolumeReady || newStatus == apiV1.Failed {
+		volumeCR.Spec.CSIStatus = newStatus
+		if err := s.crHelper.UpdateVolumeCRSpec(volumeCR.Name, volumeCR.Spec); err != nil {
+			ll.Errorf("Unable to set volume status to %s: %v", newStatus, err)
+			resp, errToReturn = nil, fmt.Errorf("failed to stage volume: update volume CR error")
+		}
 	}
 
 	return resp, errToReturn
@@ -159,6 +180,20 @@ func (s *CSINodeService) NodeUnstageVolume(ctx context.Context, req *csi.NodeUns
 		"volumeID": req.GetVolumeId(),
 	})
 
+	ll.Infof("locking volume on request: %v", req)
+	s.volMu.LockKey(req.GetVolumeId())
+	defer func() {
+		err := s.volMu.UnlockKey(req.GetVolumeId())
+		if err != nil {
+			ll.Warnf("Unlocking  volume with error %s", err)
+		}
+	}()
+	select {
+	case <-ctx.Done():
+		return nil, fmt.Errorf("context is done after volume lock. err: %s", ctx.Err())
+	default:
+	}
+
 	ll.Infof("Processing request: %v", req)
 
 	// Check arguments
@@ -173,8 +208,15 @@ func (s *CSINodeService) NodeUnstageVolume(ctx context.Context, req *csi.NodeUns
 		return nil, status.Error(codes.NotFound, "Unable to find volume")
 	}
 
-	if volumeCR.Spec.CSIStatus == apiV1.Failed {
-		return nil, status.Errorf(codes.Internal, "corresponding CR %s has Failed status", volumeCR.Spec.Id)
+	currStatus := volumeCR.Spec.CSIStatus
+	if currStatus == apiV1.Created {
+		ll.Info("Volume has been already unstaged")
+		return &csi.NodeUnstageVolumeResponse{}, nil
+	} else if currStatus != apiV1.VolumeReady {
+		msg := fmt.Sprintf("current volume CR status - %s, expected to be in [%s, %s]",
+			currStatus, apiV1.Created, apiV1.VolumeReady)
+		ll.Error(msg)
+		return nil, status.Error(codes.FailedPrecondition, msg)
 	}
 
 	// This is a temporary solution to clear all owners during NodeUnstage
@@ -192,12 +234,13 @@ func (s *CSINodeService) NodeUnstageVolume(ctx context.Context, req *csi.NodeUns
 		resp = nil
 	}
 
-	if updateErr := s.k8sClient.UpdateCR(context.Background(), volumeCR); updateErr != nil {
+	ctxWithID := context.WithValue(context.Background(), k8s.RequestUUID, req.GetVolumeId())
+	if updateErr := s.k8sClient.UpdateCR(ctxWithID, volumeCR); updateErr != nil {
 		ll.Errorf("Unable to update volume CR: %v", updateErr)
 		resp, errToReturn = nil, fmt.Errorf("failed to unstage volume: update volume CR error")
 	}
 
-	ll.Debugf("Unstage successfully")
+	ll.Debugf("Unstaged - %v", errToReturn == nil)
 	return resp, errToReturn
 }
 
@@ -210,6 +253,20 @@ func (s *CSINodeService) NodePublishVolume(ctx context.Context, req *csi.NodePub
 		"method":   "NodePublishVolume",
 		"volumeID": req.GetVolumeId(),
 	})
+
+	ll.Infof("locking volume on request: %v", req)
+	s.volMu.LockKey(req.GetVolumeId())
+	defer func() {
+		err := s.volMu.UnlockKey(req.GetVolumeId())
+		if err != nil {
+			ll.Warnf("Unlocking  volume with error %s", err)
+		}
+	}()
+	select {
+	case <-ctx.Done():
+		return nil, fmt.Errorf("context is done after volume lock. err: %s", ctx.Err())
+	default:
+	}
 
 	ll.Infof("Processing request: %v", req)
 
@@ -271,8 +328,13 @@ func (s *CSINodeService) NodePublishVolume(ctx context.Context, req *csi.NodePub
 		return nil, status.Error(codes.Internal, "Unable to find volume")
 	}
 
-	if volumeCR.Spec.CSIStatus == apiV1.Failed {
-		return nil, fmt.Errorf("corresponding volume CR %s reached failed status", volumeCR.Spec.Id)
+	currStatus := volumeCR.Spec.CSIStatus
+	// if currStatus not in [VolumeReady, Published], but for inline volume we expect Created status
+	if currStatus != apiV1.VolumeReady && currStatus != apiV1.Published && !inline {
+		msg := fmt.Sprintf("current volume CR status - %s, expected to be in [%s, %s]",
+			currStatus, apiV1.VolumeReady, apiV1.Published)
+		ll.Error(msg)
+		return nil, status.Error(codes.FailedPrecondition, msg)
 	}
 
 	var (
@@ -301,9 +363,9 @@ func (s *CSINodeService) NodePublishVolume(ctx context.Context, req *csi.NodePub
 		volumeCR.Spec.Owners = owners
 	}
 
-	ll.Infof("Set CSIStatus to %s", newStatus)
+	ctxWithID := context.WithValue(context.Background(), k8s.RequestUUID, volumeID)
 	volumeCR.Spec.CSIStatus = newStatus
-	if err = s.k8sClient.UpdateCR(context.Background(), volumeCR); err != nil {
+	if err = s.k8sClient.UpdateCR(ctxWithID, volumeCR); err != nil {
 		ll.Errorf("Unable to update volume CR to %v, error: %v", volumeCR, err)
 		resp, errToReturn = nil, fmt.Errorf("failed to publish volume: update volume CR error")
 	}
@@ -373,6 +435,26 @@ func (s *CSINodeService) createInlineVolume(ctx context.Context, volumeID string
 	return vol, nil
 }
 
+//checkK8SClient check if node can access CRs in Kubernetes
+func (s *CSINodeService) checkK8SClient() bool {
+	if err := s.k8sClient.ReadList(context.Background(), &drivecrd.DriveList{}); err != nil {
+		return false
+	}
+
+	if err := s.k8sClient.ReadList(context.Background(), &volumecrd.VolumeList{}); err != nil {
+		return false
+	}
+
+	if err := s.k8sClient.ReadList(context.Background(), &accrd.AvailableCapacityList{}); err != nil {
+		return false
+	}
+
+	if err := s.k8sClient.ReadList(context.Background(), &lvgcrd.LVGList{}); err != nil {
+		return false
+	}
+	return true
+}
+
 // NodeUnpublishVolume is the implementation of CSI Spec NodePublishVolume. Performs each time pod stops consume a volume.
 // This method unmounts volume with appropriate VolumeID from the TargetPath.
 // Receives golang context and CSI Spec NodeUnpublishVolumeRequest
@@ -382,6 +464,20 @@ func (s *CSINodeService) NodeUnpublishVolume(ctx context.Context, req *csi.NodeU
 		"method":   "NodeUnpublishVolume",
 		"volumeID": req.GetVolumeId(),
 	})
+
+	ll.Infof("locking volume on request: %v", req)
+	s.volMu.LockKey(req.GetVolumeId())
+	defer func() {
+		err := s.volMu.UnlockKey(req.GetVolumeId())
+		if err != nil {
+			ll.Warnf("Unlocking  volume with error %s", err)
+		}
+	}()
+	select {
+	case <-ctx.Done():
+		return nil, fmt.Errorf("context is done after volume lock. err: %s", ctx.Err())
+	default:
+	}
 
 	ll.Infof("Processing request: %v", req)
 
@@ -397,23 +493,34 @@ func (s *CSINodeService) NodeUnpublishVolume(ctx context.Context, req *csi.NodeU
 	if volumeCR == nil {
 		return nil, status.Error(codes.NotFound, "Unable to find volume")
 	}
+
+	currStatus := volumeCR.Spec.CSIStatus
+	// if currStatus not in [VolumeReady, Published]
+	if currStatus != apiV1.VolumeReady && currStatus != apiV1.Published {
+		msg := fmt.Sprintf("current volume CR status - %s, expected to be in [%s, %s]",
+			currStatus, apiV1.VolumeReady, apiV1.Published)
+		ll.Error(msg)
+		return nil, status.Error(codes.FailedPrecondition, msg)
+	}
+
+	ctxWithID := context.WithValue(context.Background(), k8s.RequestUUID, req.GetVolumeId())
 	if err := s.fsOps.Unmount(req.GetTargetPath()); err != nil {
 		ll.Errorf("Unable to unmount volume: %v", err)
 		volumeCR.Spec.CSIStatus = apiV1.Failed
-		if updateErr := s.k8sClient.UpdateCR(context.Background(), volumeCR); updateErr != nil {
+		if updateErr := s.k8sClient.UpdateCR(ctxWithID, volumeCR); updateErr != nil {
 			ll.Errorf("Unable to set volume CR status to failed: %v", updateErr)
 		}
 		return nil, status.Error(codes.Internal, "unmount error")
 	}
-	//If volume has more than 1 owner pods then keep its status as Published
+	// If volume has more than 1 owner pods then keep its status as Published
 	if len(volumeCR.Spec.Owners) > 1 {
 		return &csi.NodeUnpublishVolumeResponse{}, nil
 	}
 
-	//k8s dosn't call DeleteVolume for inline volumes, so we perform DeleteVolume operation in Unpublish request
+	// k8s dosn't call DeleteVolume for inline volumes, so we perform DeleteVolume operation in Unpublish request
 	if volumeCR.Spec.Ephemeral {
 		s.reqMu.Lock()
-		err := s.svc.DeleteVolume(ctx, req.GetVolumeId())
+		err := s.svc.DeleteVolume(ctxWithID, req.GetVolumeId())
 		s.reqMu.Unlock()
 
 		if err != nil {
@@ -430,11 +537,11 @@ func (s *CSINodeService) NodeUnpublishVolume(ctx context.Context, req *csi.NodeU
 			return nil, status.Error(codes.Internal, "Unable to delete volume")
 		}
 		s.reqMu.Lock()
-		s.svc.UpdateCRsAfterVolumeDeletion(ctx, req.VolumeId)
+		s.svc.UpdateCRsAfterVolumeDeletion(ctxWithID, req.VolumeId)
 		s.reqMu.Unlock()
 	} else {
 		volumeCR.Spec.CSIStatus = apiV1.VolumeReady
-		if updateErr := s.k8sClient.UpdateCR(context.Background(), volumeCR); updateErr != nil {
+		if updateErr := s.k8sClient.UpdateCR(ctxWithID, volumeCR); updateErr != nil {
 			ll.Errorf("Unable to set volume CR status to VolumeReady: %v", updateErr)
 		}
 	}

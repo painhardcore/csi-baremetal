@@ -2,7 +2,9 @@ package node
 
 import (
 	"errors"
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	. "github.com/onsi/ginkgo"
@@ -12,6 +14,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	api "eos2git.cec.lab.emc.com/ECS/baremetal-csi-plugin.git/api/generated/v1"
 	apiV1 "eos2git.cec.lab.emc.com/ECS/baremetal-csi-plugin.git/api/v1"
@@ -173,9 +176,10 @@ var _ = Describe("CSINodeService NodeStage()", func() {
 
 	Context("NodeStage() success", func() {
 		It("Should stage volume", func() {
-			req := getNodeStageRequest(testVolume1.Id, *testVolumeCap)
+			// testVolume2 has Create status
+			req := getNodeStageRequest(testVolume2.Id, *testVolumeCap)
 			partitionPath := "/partition/path/for/volume1"
-			prov.On("GetVolumePath", testVolume1).Return(partitionPath, nil)
+			prov.On("GetVolumePath", testVolume2).Return(partitionPath, nil)
 			fsOps.On("PrepareAndPerformMount",
 				partitionPath, req.GetStagingTargetPath(), false).
 				Return(nil)
@@ -197,8 +201,8 @@ var _ = Describe("CSINodeService NodeStage()", func() {
 
 			partitionPath := "/partition/path/for/volume1"
 			prov.On("GetVolumePath", vol1.Spec).Return(partitionPath, nil)
-			fsOps.On("Mount",
-				partitionPath, req.GetStagingTargetPath(), []string(nil)).
+			fsOps.On("PrepareAndPerformMount",
+				partitionPath, req.GetStagingTargetPath(), false).
 				Return(nil)
 
 			resp, err := node.NodeStageVolume(testCtx, req)
@@ -260,9 +264,9 @@ var _ = Describe("CSINodeService NodeStage()", func() {
 			Expect(status.Code(err)).To(Equal(codes.Internal))
 		})
 		It("Failed because PrepareAndPerformMount had failed", func() {
-			req := getNodeStageRequest(testVolume1.Id, *testVolumeCap)
+			req := getNodeStageRequest(testVolume2.Id, *testVolumeCap)
 			partitionPath := "/partition/path/for/volume1"
-			prov.On("GetVolumePath", testVolume1).Return(partitionPath, nil)
+			prov.On("GetVolumePath", testVolume2).Return(partitionPath, nil)
 			fsOps.On("PrepareAndPerformMount",
 				partitionPath, req.GetStagingTargetPath(), false).
 				Return(errors.New("PrepareAndPerformMount error"))
@@ -280,9 +284,9 @@ var _ = Describe("CSINodeService NodeStage()", func() {
 
 			partitionPath := "/partition/path/for/volume1"
 			prov.On("GetVolumePath", vol1.Spec).Return(partitionPath, nil)
-			fsOps.On("Mount",
-				partitionPath, req.GetStagingTargetPath(), []string(nil)).
-				Return(errors.New("Mount error"))
+			fsOps.On("PrepareAndPerformMount",
+				partitionPath, req.GetStagingTargetPath(), false).
+				Return(errors.New("mount error"))
 
 			resp, err := node.NodeStageVolume(testCtx, req)
 			Expect(resp).To(BeNil())
@@ -460,7 +464,41 @@ var _ = Describe("CSINodeService NodeUnStage()", func() {
 			resp, err := node.NodeUnstageVolume(testCtx, req)
 			Expect(resp).To(BeNil())
 			Expect(err).ToNot(BeNil())
-			Expect(status.Code(err)).To(Equal(codes.Internal))
+			Expect(status.Code(err)).To(Equal(codes.FailedPrecondition))
+		})
+	})
+
+	Context("NodeUnStage() concurrent requests", func() {
+		It("Should unstage volume one time", func() {
+			req := getNodeUnstageRequest(testV1ID, stagePath)
+			secondUnstageErr := make(chan error)
+			// Unmount should only once respond with no error
+			fsOps.On("Unmount", req.GetStagingTargetPath()).Return(nil).Run(func(_ mock.Arguments) {
+				go func() {
+					_, err := node.NodeUnstageVolume(testCtx, req)
+					secondUnstageErr <- err
+				}()
+				// make call blocking call
+				time.Sleep(10 * time.Millisecond)
+			}).Once()
+			// on later calls it will respond error
+			fsOps.On("Unmount", req.GetStagingTargetPath()).
+				Return(fmt.Errorf("%s not mounted", req.GetStagingTargetPath()))
+
+			resp, err := node.NodeUnstageVolume(testCtx, req)
+			Expect(resp).NotTo(BeNil())
+			Expect(err).To(BeNil())
+
+			// check concurrent call error
+			err = <-secondUnstageErr
+			Expect(err).To(BeNil())
+
+			// check owners and CSI status
+			volumeCR := &vcrd.Volume{}
+			err = node.k8sClient.ReadCR(testCtx, testV1ID, volumeCR)
+			Expect(err).To(BeNil())
+			Expect(volumeCR.Spec.Owners).To(BeNil())
+			Expect(volumeCR.Spec.CSIStatus).To(Equal(apiV1.Created))
 		})
 	})
 })
@@ -607,6 +645,27 @@ var _ = Describe("CSINodeService InlineVolumes", func() {
 			Expect(resp).To(BeNil())
 			Expect(err).NotTo(BeNil())
 		})
+	})
+})
+
+var _ = Describe("CSINodeService Probe()", func() {
+	It("Should success", func() {
+		node := newNodeService()
+		node.initialized = true
+
+		resp, err := node.Probe(testCtx, &csi.ProbeRequest{})
+		Expect(err).To(BeNil())
+		Expect(resp).ToNot(BeNil())
+		Expect(resp.Ready.Value).To(Equal(true))
+	})
+	It("Should failed", func() {
+		node := newNodeService()
+		//client without scheme, so it should failed probe because k8s doesn't aware of CRD
+		node.k8sClient = k8s.NewKubeClient(fake.NewFakeClient(), testLogger, testNs)
+		resp, err := node.Probe(testCtx, &csi.ProbeRequest{})
+		Expect(err).To(BeNil())
+		Expect(resp).ToNot(BeNil())
+		Expect(resp.Ready.Value).To(Equal(false))
 	})
 })
 
