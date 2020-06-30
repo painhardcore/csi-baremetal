@@ -42,6 +42,7 @@ const (
 	setupLoopBackDeviceCmdTmpl      = losetupCmd + " -fP %s"
 	detachLoopBackDeviceCmdTmpl     = losetupCmd + " -d %s"
 	findUnusedLoopBackDeviceCmdTmpl = losetupCmd + " -f"
+	findAllLoopBackDevicesCmdTmpl   = losetupCmd + " -a"
 
 	configPath = "/etc/config/config.yaml"
 )
@@ -258,7 +259,8 @@ func (mgr *LoopBackManager) updateDevicesFromConfig() {
 	mgr.Lock()
 	defer mgr.Unlock()
 	ll := mgr.log.WithField("method", "updateDevicesFromConfig")
-
+	ll.Info("started")
+	defer ll.Info("enden")
 	mgr.readAndSetConfig(configPath)
 
 	if mgr.config == nil {
@@ -326,6 +328,8 @@ func (mgr *LoopBackManager) updateDevicesFromConfig() {
 // Receives deviceCount which represents what amount of devices manager should have and slice of devices to override
 func (mgr *LoopBackManager) overrideDevicesFromNodeConfig(deviceCount int, devices []*LoopBackDevice) {
 	ll := mgr.log.WithField("method", "overrideDevicesFromNodeConfig")
+	ll.Info("started")
+	defer ll.Info("enden")
 	for _, device := range devices {
 		overrode := false
 		for i, mgrDevice := range mgr.devices {
@@ -424,9 +428,12 @@ func (mgr *LoopBackManager) Init() {
 	mgr.Lock()
 	defer mgr.Unlock()
 	ll := mgr.log.WithField("method", "Init")
+	ll.Info("started")
+	defer ll.Info("enden")
 	var device string
 
 	fsOps := fs.NewFSImpl(mgr.exec)
+	//devicePath := make(map[string]string)
 	// go through the list of devices and register if needed
 	for i := 0; i < len(mgr.devices); i++ {
 		// If device has devicePath it means that it already bounded to loop device. Skip it.
@@ -545,6 +552,28 @@ func (mgr *LoopBackManager) GetLoopBackDeviceName(file string) (string, error) {
 	return "", nil
 }
 
+// GetLoopBackDeviceNames return map with device name - device path.
+func (mgr *LoopBackManager) GetLoopBackDeviceNames() (map[string]string, error) {
+	// check that loopback device exists
+	_, stderr, err := mgr.exec.RunCmd(findAllLoopBackDevicesCmdTmpl)
+	if err != nil {
+		mgr.log.Errorf("Unable to get loopback configurations f: %s", stderr)
+		return nil, err
+	}
+	return nil, nil
+
+	//TODO:
+	//
+	//// not the best way to find file name
+	//if strings.Contains(stdout, file) {
+	//	// device already registered
+	//	// output example: /dev/loop18: []: (/tmp/loopback-ubuntu-0.img)
+	//	return strings.Split(stdout, ":")[0], nil
+	//}
+	//
+	//return "", nil
+}
+
 // CleanupLoopDevices detaches loop devices that are occupied by LoopBackManager
 func (mgr *LoopBackManager) CleanupLoopDevices() {
 	for _, device := range mgr.devices {
@@ -555,6 +584,8 @@ func (mgr *LoopBackManager) CleanupLoopDevices() {
 // updateOnConfigChange triggers updateDevicesFromConfig() on Write or Create FS Events
 func (mgr *LoopBackManager) updateOnConfigChange(watcher *fsnotify.Watcher, logger *logrus.Logger) {
 	err := watcher.Add(configPath)
+	logger.Info("updateOnConfigChange started")
+	defer logger.Info("updateOnConfigChange enden")
 	if err != nil {
 		logger.Fatalf("Can't add config to file watcher %s", err)
 	}
