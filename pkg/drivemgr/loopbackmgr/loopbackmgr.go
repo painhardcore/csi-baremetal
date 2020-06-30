@@ -42,7 +42,7 @@ const (
 	setupLoopBackDeviceCmdTmpl      = losetupCmd + " -fP %s"
 	detachLoopBackDeviceCmdTmpl     = losetupCmd + " -d %s"
 	findUnusedLoopBackDeviceCmdTmpl = losetupCmd + " -f"
-	findAllLoopBackDevicesCmdTmpl   = losetupCmd + " -a"
+	findAllLoopBackDevicesCmdTmpl   = losetupCmd + " -J"
 
 	configPath = "/etc/config/config.yaml"
 )
@@ -60,7 +60,7 @@ type LoopBackManager struct {
 	nodeID   string
 	devices  []*LoopBackDevice
 	config   *Config
-	sync.RWMutex
+	sync.Mutex
 }
 
 // LoopBackDevice struct contains fields to describe a loop device bound with a file
@@ -504,8 +504,8 @@ func (mgr *LoopBackManager) Init() {
 // GetDrivesList returns list of loopback devices as *api.Drive slice
 // Returns *api.Drive slice or error if something went wrong
 func (mgr *LoopBackManager) GetDrivesList() ([]*api.Drive, error) {
-	mgr.RLock()
-	defer mgr.RUnlock()
+	mgr.Lock()
+	defer mgr.Unlock()
 
 	drives := make([]*api.Drive, 0)
 	for i := 0; i < len(mgr.devices); i++ {
@@ -583,9 +583,9 @@ func (mgr *LoopBackManager) CleanupLoopDevices() {
 
 // updateOnConfigChange triggers updateDevicesFromConfig() on Write or Create FS Events
 func (mgr *LoopBackManager) updateOnConfigChange(watcher *fsnotify.Watcher, logger *logrus.Logger) {
-	err := watcher.Add(configPath)
 	logger.Info("updateOnConfigChange started")
 	defer logger.Info("updateOnConfigChange enden")
+	err := watcher.Add(configPath)
 	if err != nil {
 		logger.Fatalf("Can't add config to file watcher %s", err)
 	}
@@ -595,10 +595,20 @@ func (mgr *LoopBackManager) updateOnConfigChange(watcher *fsnotify.Watcher, logg
 			logger.Info("file watcher is closed")
 			return
 		}
-		if event.Op == fsnotify.Write || event.Op == fsnotify.Create {
-			logger.Infof("Triggering updateDevicesFromConfig on %s event", event.Op)
-			mgr.updateDevicesFromConfig()
-			mgr.Init()
+		logger.Infof("event %s came ", event.Op)
+
+		switch event.Op {
+		case fsnotify.Chmod:
+			continue
+		case fsnotify.Remove:
+			watcher.Remove(configPath)
+			watcher.Add(configPath)
+		default:
+			logger.Infof("unexpected file event %s", event.Op)
 		}
+
+		logger.Infof("Triggering updateDevicesFromConfig on %s event", event.Op)
+		mgr.updateDevicesFromConfig()
+		mgr.Init()
 	}
 }
