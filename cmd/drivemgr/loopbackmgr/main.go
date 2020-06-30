@@ -43,6 +43,7 @@ func main() {
 	defer watcher.Close()
 
 	driveMgr := loopbackmgr.NewLoopBackManager(e, watcher, logger)
+	driveMgr.Init()
 
 	dmsetup.SetupAndRunDriveMgr(driveMgr, serverRunner, driveMgr.CleanupLoopDevices, logger)
 }
