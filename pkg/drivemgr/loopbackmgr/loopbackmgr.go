@@ -17,6 +17,7 @@ import (
 	apiV1 "eos2git.cec.lab.emc.com/ECS/baremetal-csi-plugin.git/api/v1"
 	"eos2git.cec.lab.emc.com/ECS/baremetal-csi-plugin.git/pkg/base/command"
 	"eos2git.cec.lab.emc.com/ECS/baremetal-csi-plugin.git/pkg/base/linuxutils/fs"
+	"eos2git.cec.lab.emc.com/ECS/baremetal-csi-plugin.git/pkg/base/linuxutils/losetup"
 	"eos2git.cec.lab.emc.com/ECS/baremetal-csi-plugin.git/pkg/base/util"
 )
 
@@ -42,7 +43,6 @@ const (
 	setupLoopBackDeviceCmdTmpl      = losetupCmd + " -fP %s"
 	detachLoopBackDeviceCmdTmpl     = losetupCmd + " -d %s"
 	findUnusedLoopBackDeviceCmdTmpl = losetupCmd + " -f"
-	findAllLoopBackDevicesCmdTmpl   = losetupCmd + " -J"
 
 	configPath = "/etc/config/config.yaml"
 )
@@ -60,6 +60,7 @@ type LoopBackManager struct {
 	nodeID   string
 	devices  []*LoopBackDevice
 	config   *Config
+	losetup  losetup.WrapLOSETUP
 	sync.Mutex
 }
 
@@ -110,13 +111,14 @@ func NewLoopBackManager(exec command.CmdExecutor, fsw *fsnotify.Watcher, logger 
 		*/
 		hostname = defaultFileName
 	}
-
+	log := logger.WithField("component", "LoopBackManager")
 	mgr := &LoopBackManager{
-		log:      logger.WithField("component", "LoopBackManager"),
+		log:      log,
 		exec:     exec,
 		hostname: hostname,
 		nodeID:   os.Getenv("KUBE_NODE_NAME"),
 		devices:  make([]*LoopBackDevice, 0),
+		losetup:  losetup.NewLOSETUP(exec, log),
 	}
 
 	mgr.attemptToRecoverDevices(imagesFolder)
@@ -429,11 +431,13 @@ func (mgr *LoopBackManager) Init() {
 	defer mgr.Unlock()
 	ll := mgr.log.WithField("method", "Init")
 	ll.Info("started")
-	defer ll.Info("enden")
-	var device string
+	defer ll.Info("ended")
 
 	fsOps := fs.NewFSImpl(mgr.exec)
-	//devicePath := make(map[string]string)
+	loopdevs, err := mgr.GetLoopBackDeviceNames()
+	if err != nil {
+		ll.Fatalf("Unable to get loopbackdevices :%s", err)
+	}
 	// go through the list of devices and register if needed
 	for i := 0; i < len(mgr.devices); i++ {
 		// If device has devicePath it means that it already bounded to loop device. Skip it.
@@ -467,22 +471,18 @@ func (mgr *LoopBackManager) Init() {
 			}
 
 			// check that loopback device exists. ignore error here
-			device, _ = mgr.GetLoopBackDeviceName(file)
-			if device != "" {
+			if device, ok := loopdevs[file]; ok {
 				// try to detach
 				_, _, err := mgr.exec.RunCmd(fmt.Sprintf(detachLoopBackDeviceCmdTmpl, device))
 				if err != nil {
 					ll.Errorf("Unable to detach loopback device %s for file %s", device, file)
 				}
 			}
-		} else {
+		} else if device, ok := loopdevs[file]; ok {
 			// check that loopback device exists
-			device, _ = mgr.GetLoopBackDeviceName(file)
-			if device != "" {
-				mgr.devices[i].devicePath = device
-				// go to the next
-				continue
-			}
+			mgr.devices[i].devicePath = device
+			// go to the next
+			continue
 		}
 
 		// check that system has unused device for troubleshooting purposes
@@ -496,8 +496,20 @@ func (mgr *LoopBackManager) Init() {
 		if errcode != nil {
 			ll.Fatalf("Unable to create loopback device for %s: %s", file, stderr)
 		}
-		device, _ = mgr.GetLoopBackDeviceName(file)
-		mgr.devices[i].devicePath = device
+	}
+	// get again
+	loopdevs, err = mgr.GetLoopBackDeviceNames()
+	if err != nil {
+		ll.Fatalf("Unable to get loopbackdevices :%s", err)
+	}
+	for i := 0; i < len(mgr.devices); i++ {
+		if mgr.devices[i].devicePath != "" {
+			continue
+		}
+		file := mgr.devices[i].fileName
+		if device, ok := loopdevs[file]; ok {
+			mgr.devices[i].devicePath = device
+		}
 	}
 }
 
@@ -555,23 +567,15 @@ func (mgr *LoopBackManager) GetLoopBackDeviceName(file string) (string, error) {
 // GetLoopBackDeviceNames return map with device name - device path.
 func (mgr *LoopBackManager) GetLoopBackDeviceNames() (map[string]string, error) {
 	// check that loopback device exists
-	_, stderr, err := mgr.exec.RunCmd(findAllLoopBackDevicesCmdTmpl)
+	devices, err := mgr.losetup.GetLoopBackDevices()
 	if err != nil {
-		mgr.log.Errorf("Unable to get loopback configurations f: %s", stderr)
 		return nil, err
 	}
-	return nil, nil
-
-	//TODO:
-	//
-	//// not the best way to find file name
-	//if strings.Contains(stdout, file) {
-	//	// device already registered
-	//	// output example: /dev/loop18: []: (/tmp/loopback-ubuntu-0.img)
-	//	return strings.Split(stdout, ":")[0], nil
-	//}
-	//
-	//return "", nil
+	devicemap := make(map[string]string, len(devices))
+	for i := range devices {
+		devicemap[devices[i].BackFile] = devices[i].Name
+	}
+	return devicemap, nil
 }
 
 // CleanupLoopDevices detaches loop devices that are occupied by LoopBackManager
@@ -601,8 +605,14 @@ func (mgr *LoopBackManager) updateOnConfigChange(watcher *fsnotify.Watcher, logg
 		case fsnotify.Chmod:
 			continue
 		case fsnotify.Remove:
-			watcher.Remove(configPath)
-			watcher.Add(configPath)
+			err = watcher.Remove(configPath)
+			if err != nil {
+				logger.Fatalf("Can't remove config to file watcher %s", err)
+			}
+			err = watcher.Add(configPath)
+			if err != nil {
+				logger.Fatalf("Can't add config to file watcher %s", err)
+			}
 		default:
 			logger.Infof("unexpected file event %s", event.Op)
 		}
