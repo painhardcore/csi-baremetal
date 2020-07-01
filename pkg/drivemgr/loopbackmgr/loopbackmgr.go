@@ -7,6 +7,8 @@ import (
 	"os"
 	"strings"
 
+	"eos2git.cec.lab.emc.com/ECS/baremetal-csi-plugin.git/pkg/base/linuxutils/losetup"
+
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v2"
@@ -57,6 +59,7 @@ type LoopBackManager struct {
 	nodeID   string
 	devices  []*LoopBackDevice
 	config   *Config
+	losetup  losetup.WrapLOSETUP
 }
 
 // LoopBackDevice struct contains fields to describe a loop device bound with a file
@@ -106,13 +109,14 @@ func NewLoopBackManager(exec command.CmdExecutor, logger *logrus.Logger) *LoopBa
 		*/
 		hostname = defaultFileName
 	}
-
+	log := logger.WithField("component", "LoopBackManager")
 	mgr := &LoopBackManager{
-		log:      logger.WithField("component", "LoopBackManager"),
+		log:      log,
 		exec:     exec,
 		hostname: hostname,
 		nodeID:   os.Getenv("KUBE_NODE_NAME"),
 		devices:  make([]*LoopBackDevice, 0),
+		losetup:  losetup.NewLOSETUP(exec, log),
 	}
 
 	mgr.attemptToRecoverDevices(imagesFolder)
@@ -411,9 +415,11 @@ func (mgr *LoopBackManager) deleteLoopbackDevice(device *LoopBackDevice) {
 // Returns error if something went wrong
 func (mgr *LoopBackManager) Init() (err error) {
 	ll := mgr.log.WithField("method", "Init")
-	var device string
-
 	fsOps := fs.NewFSImpl(mgr.exec)
+	loopdevs, err := mgr.GetLoopBackDeviceNames()
+	if err != nil {
+		ll.Fatalf("Unable to get loopbackdevices :%s", err)
+	}
 	// go through the list of devices and register if needed
 	for i := 0; i < len(mgr.devices); i++ {
 		// If device has devicePath it means that it already bounded to loop device. Skip it.
@@ -447,22 +453,18 @@ func (mgr *LoopBackManager) Init() (err error) {
 			}
 
 			// check that loopback device exists. ignore error here
-			device, _ = mgr.GetLoopBackDeviceName(file)
-			if device != "" {
+			if device, ok := loopdevs[file]; ok {
 				// try to detach
 				_, _, err := mgr.exec.RunCmd(fmt.Sprintf(detachLoopBackDeviceCmdTmpl, device))
 				if err != nil {
 					ll.Errorf("Unable to detach loopback device %s for file %s", device, file)
 				}
 			}
-		} else {
+		} else if device, ok := loopdevs[file]; ok {
 			// check that loopback device exists
-			device, _ = mgr.GetLoopBackDeviceName(file)
-			if device != "" {
-				mgr.devices[i].devicePath = device
-				// go to the next
-				continue
-			}
+			mgr.devices[i].devicePath = device
+			// go to the next
+			continue
 		}
 
 		// check that system has unused device for troubleshooting purposes
@@ -476,10 +478,36 @@ func (mgr *LoopBackManager) Init() (err error) {
 		if errcode != nil {
 			ll.Fatalf("Unable to create loopback device for %s: %s", file, stderr)
 		}
-		device, _ = mgr.GetLoopBackDeviceName(file)
-		mgr.devices[i].devicePath = device
+	}
+	// get again
+	loopdevs, err = mgr.GetLoopBackDeviceNames()
+	if err != nil {
+		ll.Fatalf("Unable to get loopbackdevices :%s", err)
+	}
+	for i := 0; i < len(mgr.devices); i++ {
+		if mgr.devices[i].devicePath != "" {
+			continue
+		}
+		file := mgr.devices[i].fileName
+		if device, ok := loopdevs[file]; ok {
+			mgr.devices[i].devicePath = device
+		}
 	}
 	return nil
+}
+
+// GetLoopBackDeviceNames return map with device name - device path.
+func (mgr *LoopBackManager) GetLoopBackDeviceNames() (map[string]string, error) {
+	// check that loopback device exists
+	devices, err := mgr.losetup.GetLoopBackDevices()
+	if err != nil {
+		return nil, err
+	}
+	devicemap := make(map[string]string, len(devices))
+	for i := range devices {
+		devicemap[devices[i].BackFile] = devices[i].Name
+	}
+	return devicemap, nil
 }
 
 // GetDrivesList returns list of loopback devices as *api.Drive slice
