@@ -55,7 +55,7 @@ func (lo *LOSETUP) GetLoopBackDevices() ([]LoopBackDevice, error) {
 	var list ListDevices
 	err = json.Unmarshal([]byte(stdout), &list)
 	if err != nil {
-		lo.log.Errorf("Unable to parse output: %s", stderr)
+		lo.log.Errorf("Unable to parse output: %s, with error: %s", stdout, stderr)
 		return nil, err
 	}
 	return list.LoopBackDevices, nil
