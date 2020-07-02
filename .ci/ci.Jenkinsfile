@@ -89,13 +89,13 @@ void runTests() {
                             kubectl apply -f /tmp/baremetal-csi-plugin/templates/csidriver.yaml
                         ''')
                         testExitCode = sh(script: "make test-ci", returnStatus: true)
-                        archiveArtifacts('log.txt')
                         common.parseJunitResults(searchPattern: 'test/e2e/report.xml')
                         if ((testExitCode == 0)) {
                             testResultSuccess = true
                         }
                     }
                 } finally {
+                    archiveArtifacts('log.txt')
                     sh("""
                         kind delete cluster
                       """)
