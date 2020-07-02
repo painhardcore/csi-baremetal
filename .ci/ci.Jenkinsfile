@@ -24,7 +24,7 @@ void runTests() {
     final String RUN_MODE_CUSTOM = 'custom'
     boolean testResultSuccess = false
     final String registry = "asdrepo.isus.emc.com:9042"
-    common.node(label: 'csi_test', time: 180) {
+    common.node(label: 'csi_test', time: 220) {
         try {
             common.withInfraDevkitContainerKind() {
                 try {
