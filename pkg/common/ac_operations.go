@@ -28,7 +28,7 @@ type AvailableCapacityOperations interface {
 // AcSizeMinThresholdBytes means that if AC size becomes lower then AcSizeMinThresholdBytes that AC should be deleted
 const AcSizeMinThresholdBytes = int64(util.MBYTE) // 1MB
 // lvgDefaultMetadata is a number of bytes needed for a new volume group
-const lvgDefaultMetadata = 1048576
+const lvgDefaultMetadata int64 = 1048576
 
 // ACOperationsImpl is the basic implementation of AvailableCapacityOperations interface
 type ACOperationsImpl struct {
@@ -197,6 +197,8 @@ func (a *ACOperationsImpl) recreateACToLVGSC(sc string, acs ...*accrd.AvailableC
 		lvgLocations[i] = ac.Spec.Location
 		lvgSize += ac.Spec.Size
 	}
+	// since we creating LVG from AC, take care of metadata size
+	lvgSize = lvgSize - lvgDefaultMetadata
 
 	var (
 		err    error

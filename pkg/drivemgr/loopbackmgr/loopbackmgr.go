@@ -27,7 +27,7 @@ const (
 	defaultPID             = "Loopback"
 	// for LVM need to align with VG PE size
 	// todo address this issue in https://jira.cec.lab.emc.com:8443/browse/ATLDEF-56
-	defaultSize      = "128Mi"
+	defaultSize      = "101Mi"
 	defaultHealth    = apiV1.HealthGood
 	defaultDriveType = apiV1.DriveTypeHDD
 
