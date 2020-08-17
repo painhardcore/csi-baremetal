@@ -198,7 +198,7 @@ func (a *ACOperationsImpl) recreateACToLVGSC(sc string, acs ...*accrd.AvailableC
 		lvgSize += ac.Spec.Size
 	}
 	// since we creating LVG from AC, take care of metadata size
-	lvgSize = lvgSize - lvgDefaultMetadata
+	lvgSize -= lvgDefaultMetadata
 
 	var (
 		err    error
