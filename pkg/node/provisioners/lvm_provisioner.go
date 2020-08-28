@@ -6,7 +6,6 @@ import (
 	"github.com/sirupsen/logrus"
 
 	api "github.com/dell/csi-baremetal/api/generated/v1"
-	apiV1 "github.com/dell/csi-baremetal/api/v1"
 	"github.com/dell/csi-baremetal/pkg/base/command"
 	"github.com/dell/csi-baremetal/pkg/base/k8s"
 	"github.com/dell/csi-baremetal/pkg/base/linuxutils/fs"
@@ -109,13 +108,13 @@ func (l *LVMProvisioner) getVGName(vol *api.Volume) (string, error) {
 	// Volume.Location is an LVG CR name, LVG CR name in general is same as a real VG name on node,
 	// however for LVG based on system disk LVG CR name is not the same as a VG name
 	// we need to read appropriate LVG CR and use LVG CR.Spec.Name as VG name
-	if vol.StorageClass == apiV1.StorageClassSSDLVG {
+	//if vol.StorageClass == apiV1.StorageClassSSDLVG {
 		var err error
 		vgName, err = l.crHelper.GetVGNameByLVGCRName(vol.Location)
 		if err != nil {
 			//return "", fmt.Errorf("unable to determine VG name: %v", err)
 			return "", err
 		}
-	}
+	//}
 	return vgName, nil
 }
