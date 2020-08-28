@@ -5,7 +5,7 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"time"
+	//"time"
 
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
@@ -14,7 +14,7 @@ import (
 	apiV1 "github.com/dell/csi-baremetal/api/v1"
 	accrd "github.com/dell/csi-baremetal/api/v1/availablecapacitycrd"
 	"github.com/dell/csi-baremetal/api/v1/lvgcrd"
-	"github.com/dell/csi-baremetal/pkg/base"
+	//"github.com/dell/csi-baremetal/pkg/base"
 	"github.com/dell/csi-baremetal/pkg/base/k8s"
 	"github.com/dell/csi-baremetal/pkg/base/util"
 )
@@ -179,9 +179,10 @@ func (a *ACOperationsImpl) balanceAC(acNodeMap map[string][]*accrd.AvailableCapa
 }
 
 // recreateACToLVGSC creates LVG(based on ACs), ensure it become ready,
-// creates AC based on that LVG and set sise of provided ACs to 0.
+// creates AC based on that LVG and set size of provided ACs to 0.
 // Receives sc as string (HDDLVG or SSDLVG) and AvailableCapacities where LVG should be based
 // Returns created AC or nil
+// todo rename
 func (a *ACOperationsImpl) recreateACToLVGSC(sc string, acs ...accrd.AvailableCapacity) *accrd.AvailableCapacity {
 	ll := a.log.WithField("method", "recreateACToLVGSC")
 
@@ -193,9 +194,10 @@ func (a *ACOperationsImpl) recreateACToLVGSC(sc string, acs ...accrd.AvailableCa
 	}
 
 	var (
-		err    error
-		name   = uuid.New().String()
-		apiLVG = api.LogicalVolumeGroup{
+		err     error
+		newSize int64
+		name    = uuid.New().String()
+		apiLVG  = api.LogicalVolumeGroup{
 			Node:      acs[0].Spec.NodeId, // all ACs are from the same node
 			Name:      name,
 			Locations: lvgLocations,
@@ -204,10 +206,13 @@ func (a *ACOperationsImpl) recreateACToLVGSC(sc string, acs ...accrd.AvailableCa
 		}
 	)
 
+	// calculate size of the new AC
 	// set size ACs to 0 to avoid allocations
 	for _, ac := range acs {
+		newSize += ac.Spec.Size
 		ac.Spec.Size = 0
 		// nolint: scopelint
+		// todo no need to continue if error
 		if err = a.k8sClient.UpdateCR(context.Background(), &ac); err != nil {
 			ll.Errorf("Unable to update AC %v, error: %v.", ac, err)
 		}
@@ -219,17 +224,17 @@ func (a *ACOperationsImpl) recreateACToLVGSC(sc string, acs ...accrd.AvailableCa
 		ll.Errorf("Unable to create LVG CR: %v", err)
 		return nil
 	}
-	ll.Infof("LVG %v was created. Wait until it become ready.", apiLVG)
-	// here we should to wait until VG is reconciled by volumemgr
-	ctx, cancelFn := context.WithTimeout(context.Background(), base.DefaultTimeoutForOperations)
-	defer cancelFn()
-	var newAPILVG *api.LogicalVolumeGroup
-	if newAPILVG = a.waitUntilLVGWillBeCreated(ctx, name); newAPILVG == nil {
-		if err = a.k8sClient.DeleteCR(context.Background(), lvg); err != nil {
-			ll.Errorf("LVG creation failed and unable to remove LVG %v: %v", lvg.Spec, err)
-		}
-		return nil
-	}
+	/*	ll.Infof("LVG %v was created. Wait until it become ready.", apiLVG)
+		// here we should to wait until VG is reconciled by volumemgr
+		ctx, cancelFn := context.WithTimeout(context.Background(), base.DefaultTimeoutForOperations)
+		defer cancelFn()
+		var newAPILVG *api.LogicalVolumeGroup
+		if newAPILVG = a.waitUntilLVGWillBeCreated(ctx, name); newAPILVG == nil {
+			if err = a.k8sClient.DeleteCR(context.Background(), lvg); err != nil {
+				ll.Errorf("LVG creation failed and unable to remove LVG %v: %v", lvg.Spec, err)
+			}
+			return nil
+		}*/
 
 	// create new AC
 	newACCRName := acs[0].Spec.NodeId + "-" + lvg.Name
@@ -237,7 +242,7 @@ func (a *ACOperationsImpl) recreateACToLVGSC(sc string, acs ...accrd.AvailableCa
 		Location:     lvg.Name,
 		NodeId:       acs[0].Spec.NodeId,
 		StorageClass: sc,
-		Size:         newAPILVG.Size,
+		Size:         newSize,
 	})
 	if err = a.k8sClient.CreateCR(context.Background(), newACCRName, newACCR); err != nil {
 		ll.Errorf("Unable to create AC %v, error: %v", newACCRName, err)
@@ -263,25 +268,28 @@ func (a *ACOperationsImpl) waitUntilLVGWillBeCreated(ctx context.Context, lvgNam
 		err error
 	)
 
-	for {
-		select {
-		case <-ctx.Done():
-			ll.Warnf("Context is done and LVG still not become created, consider that it was failed")
-			return nil
-		case <-time.After(1 * time.Second):
-			err = a.k8sClient.ReadCR(ctx, lvgName, lvg)
-			switch {
-			case err != nil:
-				ll.Errorf("Unable to read LVG CR: %v", err)
-			case lvg.Spec.Status == apiV1.Created:
-				ll.Info("LVG was created")
-				return &lvg.Spec
-			case lvg.Spec.Status == apiV1.Failed:
-				ll.Warn("LVG was reached Failed status")
-				return nil
-			}
-		}
+	/*for {
+	select {
+	case <-ctx.Done():
+		ll.Warnf("Context is done and LVG still not become created, consider that it was failed")
+		return nil
+	case <-time.After(1 * time.Second):*/
+	err = a.k8sClient.ReadCR(ctx, lvgName, lvg)
+	switch {
+	case err != nil:
+		ll.Errorf("Unable to read LVG CR: %v", err)
+	case lvg.Spec.Status == apiV1.Created:
+		ll.Info("LVG was created")
+		return &lvg.Spec
+	case lvg.Spec.Status == apiV1.Failed:
+		ll.Warn("LVG was reached Failed status")
+	default:
+		ll.Warn("LVG not ready yet")
+
 	}
+	return nil
+	/*}
+	}*/
 }
 
 //tryToFindAC is used to find proper AvailableCapacity based on provided storageClass and requiredBytes

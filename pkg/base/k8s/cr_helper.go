@@ -3,6 +3,7 @@ package k8s
 import (
 	"context"
 	"errors"
+	apiV1 "github.com/dell/csi-baremetal/api/v1"
 	"strings"
 
 	"github.com/sirupsen/logrus"
@@ -273,6 +274,11 @@ func (cs *CRHelper) GetVGNameByLVGCRName(lvgCRName string) (string, error) {
 	if err := cs.k8sClient.ReadCR(context.Background(), lvgCRName, &lvgCR); err != nil {
 		return "", err
 	}
+
+	if lvgCR.Spec.Status == apiV1.Creating {
+		return "", errors.New("logical volume group not ready yet")
+	}
+
 	return lvgCR.Spec.Name, nil
 }
 

@@ -113,7 +113,8 @@ func (l *LVMProvisioner) getVGName(vol *api.Volume) (string, error) {
 		var err error
 		vgName, err = l.crHelper.GetVGNameByLVGCRName(vol.Location)
 		if err != nil {
-			return "", fmt.Errorf("unable to determine VG name: %v", err)
+			//return "", fmt.Errorf("unable to determine VG name: %v", err)
+			return "", err
 		}
 	}
 	return vgName, nil

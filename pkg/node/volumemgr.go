@@ -152,9 +152,18 @@ func (m *VolumeManager) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	case apiV1.Creating:
 		err := m.getProvisionerForVolume(&volume.Spec).PrepareVolume(volume.Spec)
 		if err != nil {
-			ll.Errorf("Unable to create volume size of %d bytes. Error: %v. Context Error: %v."+
-				" Set volume status to Failed", volume.Spec.Size, err, ctx.Err())
-			newStatus = apiV1.Failed
+			// todo better error handling
+			if strings.Contains(err.Error(), "logical volume group not ready yet") {
+				ll.Infof("Underlying location is not ready for allocations yet")
+				// keep same status but update to reconcile later
+				// todo how can we reconcile w/o update
+				// todo do we need to add timeout here?
+				newStatus = apiV1.Creating
+			} else {
+				ll.Errorf("Unable to create volume size of %d bytes. Error: %v. Context Error: %v."+
+					" Set volume status to Failed", volume.Spec.Size, err, ctx.Err())
+				newStatus = apiV1.Failed
+			}
 		} else {
 			ll.Infof("CreateLocalVolume completed successfully. Set status to Created")
 			newStatus = apiV1.Created

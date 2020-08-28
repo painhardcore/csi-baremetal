@@ -59,7 +59,7 @@ func (vo *VolumeOperationsImpl) CreateVolume(ctx context.Context, v api.Volume) 
 		"method":   "CreateVolume",
 		"volumeID": v.Id,
 	})
-	ll.Infof("Creating volume %v", v)
+	ll.Infof("Trying to create a volume %v", v)
 
 	var (
 		volumeCR = &volumecrd.Volume{}
@@ -67,8 +67,7 @@ func (vo *VolumeOperationsImpl) CreateVolume(ctx context.Context, v api.Volume) 
 	)
 	// at first check whether volume CR exist or no
 	err = vo.k8sClient.ReadCR(ctx, v.Id, volumeCR)
-	switch {
-	case err == nil:
+	if err == nil {
 		ll.Infof("Volume exists, current status: %s.", volumeCR.Spec.CSIStatus)
 		if volumeCR.Spec.CSIStatus == apiV1.Failed {
 			return nil, fmt.Errorf("corresponding volume CR %s has failed status", volumeCR.Spec.Id)
@@ -81,76 +80,81 @@ func (vo *VolumeOperationsImpl) CreateVolume(ctx context.Context, v api.Volume) 
 			_ = vo.k8sClient.UpdateCRWithAttempts(ctx, volumeCR, 5)
 			return nil, status.Error(codes.Internal, "Unable to create volume in allocated time")
 		}
-	case !k8sError.IsNotFound(err):
+		return &volumeCR.Spec, nil
+	}
+
+	if !k8sError.IsNotFound(err) {
 		ll.Errorf("Unable to read volume CR: %v", err)
 		return nil, status.Error(codes.Aborted, "unable to check volume existence")
+	}
+
+	// create volume
+	var (
+		ctxWithID      = context.WithValue(ctx, k8s.RequestUUID, v.Id)
+		ac             *accrd.AvailableCapacity
+		sc             string
+		allocatedBytes int64
+		locationType   string
+	)
+
+	// todo search AC does the creation of LVG an extra staff. Method name is really confusing
+	if ac = vo.acProvider.SearchAC(ctxWithID, v.NodeId, v.Size, v.StorageClass); ac == nil {
+		ll.Error("There is no suitable drive for volume")
+		return nil, status.Errorf(codes.ResourceExhausted, "there is no suitable drive for request %s", v.Id)
+	}
+	ll.Infof("AC %v was selected.", ac.Spec)
+	// if sc was parsed as an ANY then we can choose AC with any storage class and then
+	// volume should be created with that particular SC
+	sc = ac.Spec.StorageClass
+
+	switch sc {
+	case apiV1.StorageClassHDDLVG, apiV1.StorageClassSSDLVG:
+		allocatedBytes = v.Size
+		locationType = apiV1.LocationTypeLVM
 	default:
-		// create volume
-		var (
-			ctxWithID      = context.WithValue(ctx, k8s.RequestUUID, v.Id)
-			ac             *accrd.AvailableCapacity
-			sc             string
-			allocatedBytes int64
-			locationType   string
-		)
+		allocatedBytes = ac.Spec.Size
+		locationType = apiV1.LocationTypeDrive
+	}
 
-		if ac = vo.acProvider.SearchAC(ctxWithID, v.NodeId, v.Size, v.StorageClass); ac == nil {
-			ll.Error("There is no suitable drive for volume")
-			return nil, status.Errorf(codes.ResourceExhausted, "there is no suitable drive for request %s", v.Id)
+	// create volume CR
+	apiVolume := api.Volume{
+		Id:                v.Id,
+		NodeId:            ac.Spec.NodeId,
+		Size:              allocatedBytes,
+		Location:          ac.Spec.Location,
+		CSIStatus:         apiV1.Creating,
+		StorageClass:      sc,
+		Ephemeral:         v.Ephemeral,
+		Health:            apiV1.HealthGood,
+		LocationType:      locationType,
+		OperationalStatus: apiV1.OperationalStatusOperative,
+		Mode:              v.Mode,
+		Type:              v.Type,
+	}
+	volumeCR = vo.k8sClient.ConstructVolumeCR(v.Id, apiVolume)
+
+	if err = vo.k8sClient.CreateCR(ctxWithID, v.Id, volumeCR); err != nil {
+		ll.Errorf("Unable to create CR, error: %v", err)
+		return nil, status.Errorf(codes.Internal, "unable to create volume CR")
+	}
+
+	// decrease AC size
+	ac.Spec.Size -= allocatedBytes
+	if err = vo.k8sClient.UpdateCRWithAttempts(ctxWithID, ac, 5); err != nil {
+		ll.Errorf("Unable to set size for AC %s to %d, error: %v", ac.Name, ac.Spec.Size, err)
+	}
+
+	if util.IsStorageClassLVG(sc) {
+		lvg := &lvgcrd.LVG{}
+		if err = vo.k8sClient.ReadCR(context.Background(), volumeCR.Spec.Location, lvg); err != nil {
+			ll.Errorf("Unable to get LVG %s: %v", volumeCR.Spec.Location, err)
+			return &volumeCR.Spec, nil
 		}
-		ll.Infof("AC %v was selected.", ac.Spec)
-		// if sc was parsed as an ANY then we can choose AC with any storage class and then
-		// volume should be created with that particular SC
-		sc = ac.Spec.StorageClass
-
-		switch sc {
-		case apiV1.StorageClassHDDLVG, apiV1.StorageClassSSDLVG:
-			allocatedBytes = v.Size
-			locationType = apiV1.LocationTypeLVM
-		default:
-			allocatedBytes = ac.Spec.Size
-			locationType = apiV1.LocationTypeDrive
-		}
-
-		// create volume CR
-		apiVolume := api.Volume{
-			Id:                v.Id,
-			NodeId:            ac.Spec.NodeId,
-			Size:              allocatedBytes,
-			Location:          ac.Spec.Location,
-			CSIStatus:         apiV1.Creating,
-			StorageClass:      sc,
-			Ephemeral:         v.Ephemeral,
-			Health:            apiV1.HealthGood,
-			LocationType:      locationType,
-			OperationalStatus: apiV1.OperationalStatusOperative,
-			Mode:              v.Mode,
-			Type:              v.Type,
-		}
-		volumeCR = vo.k8sClient.ConstructVolumeCR(v.Id, apiVolume)
-
-		if err = vo.k8sClient.CreateCR(ctxWithID, v.Id, volumeCR); err != nil {
-			ll.Errorf("Unable to create CR, error: %v", err)
-			return nil, status.Errorf(codes.Internal, "unable to create volume CR")
-		}
-
-		// decrease AC size
-		ac.Spec.Size -= allocatedBytes
-		if err = vo.k8sClient.UpdateCRWithAttempts(ctxWithID, ac, 5); err != nil {
-			ll.Errorf("Unable to set size for AC %s to %d, error: %v", ac.Name, ac.Spec.Size, err)
-		}
-
-		if util.IsStorageClassLVG(sc) {
-			lvg := &lvgcrd.LVG{}
-			if err = vo.k8sClient.ReadCR(context.Background(), volumeCR.Spec.Location, lvg); err != nil {
-				ll.Errorf("Unable to get LVG %s: %v", volumeCR.Spec.Location, err)
-				return &volumeCR.Spec, nil
-			}
-			if err := vo.addVolumeToLVG(lvg, v.Id); err != nil {
-				ll.Errorf("Unable to add volume reference to LVG %s: %v", volumeCR.Spec.Location, err)
-			}
+		if err := vo.addVolumeToLVG(lvg, v.Id); err != nil {
+			ll.Errorf("Unable to add volume reference to LVG %s: %v", volumeCR.Spec.Location, err)
 		}
 	}
+
 	return &volumeCR.Spec, nil
 }
 
