@@ -11,6 +11,7 @@ const (
 	Removing           = "removing"
 	Removed            = "removed"
 	Failed             = "failed"
+	Waiting			   = "waiting"
 
 	// Health statuses
 	HealthUnknown = "UNKNOWN"

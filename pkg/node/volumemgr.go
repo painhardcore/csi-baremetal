@@ -149,7 +149,7 @@ func (m *VolumeManager) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	ll.Infof("Processing for status %s", volume.Spec.CSIStatus)
 	var newStatus string
 	switch volume.Spec.CSIStatus {
-	case apiV1.Creating:
+	case apiV1.Waiting, apiV1.Creating:
 		err := m.getProvisionerForVolume(&volume.Spec).PrepareVolume(volume.Spec)
 		if err != nil {
 			// todo better error handling
@@ -158,7 +158,7 @@ func (m *VolumeManager) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 				// keep same status but update to reconcile later
 				// todo how can we reconcile w/o update
 				// todo do we need to add timeout here?
-				newStatus = apiV1.Creating
+				newStatus = apiV1.Waiting
 			} else {
 				ll.Errorf("Unable to create volume size of %d bytes. Error: %v. Context Error: %v."+
 					" Set volume status to Failed", volume.Spec.Size, err, ctx.Err())

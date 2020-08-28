@@ -145,6 +145,24 @@ func (c *LVGController) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 		if err := c.k8sClient.UpdateCR(context.Background(), lvg); err != nil {
 			ll.Errorf("Unable to update LVG status to %s, error: %v.", newStatus, err)
 		}
+
+		// update related volumes in Waiting state
+		volumes := &vccrd.VolumeList{}
+		err = c.k8sClient.ReadList(ctx, volumes)
+		if err != nil {
+			ll.Errorf("Unable to read volume list: %v", err)
+			return ctrl.Result{}, err
+		}
+		for _, item := range volumes.Items {
+			if item.Spec.Location == lvg.Name {
+				if item.Spec.CSIStatus == apiV1.Waiting {
+					item.Spec.CSIStatus = apiV1.Creating
+					if err := c.k8sClient.UpdateCR(ctx, &vccrd.Volume{item.TypeMeta, item.ObjectMeta, item.Spec}); err != nil {
+						ll.Errorf("Unable to update %s volume: %v", item.Name, err)
+					}
+				}
+			}
+		}
 	}
 	return ctrl.Result{}, nil
 }
