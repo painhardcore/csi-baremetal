@@ -23,6 +23,7 @@ const (
 // Returns created logrus.Logger or error if something went wrong
 func InitLogger(logPath string, logLevel string) (*logrus.Logger, error) {
 	logger := logrus.New()
+	// TODO: should be configured in helm chart AK8S-1260
 	if os.Getenv("LOG_FORMAT") == "text" {
 		logger.SetFormatter(&nested.Formatter{
 			HideKeys:    true,
@@ -50,7 +51,7 @@ func InitLogger(logPath string, logLevel string) (*logrus.Logger, error) {
 
 	// set output
 	if logPath != "" {
-		file, err := os.Create(logPath)
+		file, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
 			logger.SetOutput(os.Stdout)
 			return logger, err
