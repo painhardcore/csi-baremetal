@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus"
-	k8sError "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -15,9 +14,7 @@ import (
 
 	api "github.com/dell/csi-baremetal/api/generated/v1"
 	apiV1 "github.com/dell/csi-baremetal/api/v1"
-	"github.com/dell/csi-baremetal/api/v1/lvgcrd"
 	"github.com/dell/csi-baremetal/api/v1/volumecrd"
-	"github.com/dell/csi-baremetal/pkg/base"
 	"github.com/dell/csi-baremetal/pkg/base/command"
 	"github.com/dell/csi-baremetal/pkg/base/k8s"
 	"github.com/dell/csi-baremetal/pkg/base/util"
@@ -29,6 +26,8 @@ type VolumeController struct {
 	// for interacting with kubernetes objects
 	k8sClient *k8s.KubeClient
 
+	// holds implementations of volumeStateHandler interface
+	handlers map[string]volumeStateHandler  // key - CSIStatus
 	// holds implementations of Provisioner interface
 	provisioners map[p.VolumeType]p.Provisioner
 
@@ -91,99 +90,35 @@ func (vc *VolumeController) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	}
 
 	ll.Infof("Processing for status %s", volume.Spec.CSIStatus)
-	switch volume.Spec.CSIStatus {
-	case apiV1.Creating:
-		if util.IsStorageClassLVG(volume.Spec.StorageClass) {
-			return vc.handleCreatingVolumeInLVG(ctx, volume)
-		}
-		return vc.prepareVolume(ctx, volume)
-	case apiV1.Removing:
-		return vc.handleRemovingStatus(ctx, volume)
-	default:
+	sh, ok := vc.handlers[volume.Spec.CSIStatus]
+	if !ok {
 		return ctrl.Result{}, nil
 	}
-}
-
-// handleCreatingVolumeInLVG handles volume CR that has storage class related to LVG and CSIStatus creating
-// check whether underlying LVG ready or not, add volume to LVG volumeRefs (if needed) and create real storage based on volume
-// uses as a step for Reconcile for Volume CR
-func (vc *VolumeController) handleCreatingVolumeInLVG(ctx context.Context, volume *volumecrd.Volume) (ctrl.Result, error) {
-	ll := vc.log.WithFields(logrus.Fields{
-		"method":   "handleCreatingVolumeInLVG",
-		"volumeID": volume.Spec.Id,
-	})
-
-	var (
-		lvg = &lvgcrd.LVG{}
-		err error
-	)
-
-	if err = vc.k8sClient.ReadCR(ctx, volume.Spec.Location, lvg); err != nil {
-		ll.Errorf("Unable to read underlying LVG %s: %v", volume.Spec.Location, err)
-		if k8sError.IsNotFound(err) {
-			volume.Spec.CSIStatus = apiV1.Failed
-			err = vc.k8sClient.UpdateCR(ctx, volume)
-			if err == nil {
-				return ctrl.Result{}, nil // no need to retry
-			}
-			ll.Errorf("Unable to update volume CR and set status to failed: %v", err)
-		}
-		// retry because of LVG wasn't read or Volume status wasn't updated
-		return ctrl.Result{Requeue: true, RequeueAfter: base.DefaultRequeueForVolume}, err
-	}
-
-	switch lvg.Spec.Status {
-	case apiV1.Creating:
-		ll.Debugf("Underlying LVG %s is still being created", lvg.Name)
-		return ctrl.Result{Requeue: true, RequeueAfter: base.DefaultRequeueForVolume}, nil
-	case apiV1.Failed:
-		ll.Errorf("Underlying LVG %s has reached failed status. Unable to create volume on failed lvg.", lvg.Name)
-		volume.Spec.CSIStatus = apiV1.Failed
-		if err = vc.k8sClient.UpdateCR(ctx, volume); err != nil {
-			ll.Errorf("Unable to update volume CR and set status to failed: %v", err)
-			// retry because of volume status wasn't updated
-			return ctrl.Result{Requeue: true, RequeueAfter: base.DefaultRequeueForVolume}, err
-		}
-		return ctrl.Result{}, nil // no need to retry
-	case apiV1.Created:
-		// add volume ID to LVG.Spec.VolumeRefs
-		if !util.ContainsString(lvg.Spec.VolumeRefs, volume.Spec.Id) {
-			lvg.Spec.VolumeRefs = append(lvg.Spec.VolumeRefs, volume.Spec.Id)
-			if err = vc.k8sClient.UpdateCR(ctx, lvg); err != nil {
-				ll.Errorf("Unable to add Volume ID to LVG %s volume refs: %v", lvg.Name, err)
-				return ctrl.Result{Requeue: true}, err
-			}
-		}
-		return vc.prepareVolume(ctx, volume)
-	default:
-		ll.Warnf("Unable to recognize LVG status. LVG - %v", lvg)
-		return ctrl.Result{Requeue: true, RequeueAfter: base.DefaultRequeueForVolume}, nil
-	}
-}
-
-// prepareVolume prepares real storage based on provided volume and update corresponding volume CR's CSIStatus
-// uses as a step for Reconcile for Volume CR
-func (vc *VolumeController) prepareVolume(ctx context.Context, volume *volumecrd.Volume) (ctrl.Result, error) {
-	ll := vc.log.WithFields(logrus.Fields{
-		"method":   "prepareVolume",
-		"volumeID": volume.Spec.Id,
-	})
-
-	newStatus := apiV1.Created
-
-	err := vc.getProvisionerForVolume(&volume.Spec).PrepareVolume(volume.Spec)
+	newState, err := sh.handle(volume)
 	if err != nil {
-		ll.Errorf("Unable to create volume size of %d bytes: %v. Set volume status to Failed", volume.Spec.Size, err)
-		newStatus = apiV1.Failed
+		ll.Errorf("handler for status %s end up with error: %v", volume.Spec.CSIStatus, err)
+		return ctrl.Result{Requeue: true}, err
 	}
 
-	volume.Spec.CSIStatus = newStatus
-	if updateErr := vc.k8sClient.UpdateCRWithAttempts(ctx, volume, 5); updateErr != nil {
-		ll.Errorf("Unable to update volume status to %s: %v", newStatus, updateErr)
-		return ctrl.Result{Requeue: true}, updateErr
+	ctxWithID := context.WithValue(context.Background(), k8s.RequestUUID, volume.Spec.Id)
+	if err := vc.k8sClient.UpdateCR(ctxWithID, newState); err != nil {
+		ll.Errorf("Unable to update volume CR from %v to %v: %v", volume, newState, err)
+		return ctrl.Result{Requeue: true}, err
 	}
-
-	return ctrl.Result{}, err
+	ll.Infof("Volume was reconciled successfull, status: %s -> %s", volume.Spec.CSIStatus, newState.Spec.CSIStatus)
+	return ctrl.Result{}, nil
+	//
+	//switch volume.Spec.CSIStatus {
+	//case apiV1.Creating:
+	//	if util.IsStorageClassLVG(volume.Spec.StorageClass) {
+	//		return vc.handleCreatingVolumeInLVG(ctx, volume)
+	//	}
+	//	return vc.prepareVolume(ctx, volume)
+	//case apiV1.Removing:
+	//	return vc.handleRemovingStatus(ctx, volume)
+	//default:
+	//	return ctrl.Result{}, nil
+	//}
 }
 
 // handleRemovingStatus handles volume CR with removing CSIStatus - removed real storage (partition/lv) and
@@ -254,7 +189,7 @@ func (vc *VolumeController) isCorrespondedToNodePredicate(obj runtime.Object) bo
 	return false
 }
 
-// getProvisionerForVolume returns appropriate Provisioner implementation for volume
+// getProvisioner returns appropriate Provisioner implementation for volume
 func (vc *VolumeController) getProvisionerForVolume(vol *api.Volume) p.Provisioner {
 	if util.IsStorageClassLVG(vol.StorageClass) {
 		return vc.provisioners[p.LVMBasedVolumeType]
