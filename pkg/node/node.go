@@ -29,14 +29,22 @@ import (
 )
 
 // CSINodeService is the implementation of NodeServer interface from GO CSI specification.
-// Contains VolumeManager in a such way that it is a single instance in the driver
+// Contains VolumeController and VolumeDiscoverer in a such way that it is a single instance in the driver
 type CSINodeService struct {
+	VolumeController
+	VolumeDiscoverer
+
+	// for interacting with kubernetes objects, same as in VolumeController and VolumeDiscovere,
+	// set clearly for avoiding ambiguous link
+	k8sClient *k8s.KubeClient
+	// kubernetes node ID, set clearly for avoiding ambiguous link
+	nodeID string
+
 	svc   common.VolumeOperations
 	reqMu sync.Mutex
 
 	log           *logrus.Entry
 	livenessCheck LivenessHelper
-	VolumeManager
 	csi.IdentityServer
 	grpc_health_v1.HealthServer
 
@@ -61,11 +69,14 @@ func NewCSINodeService(client api.DriveServiceClient, nodeID string, logger *log
 	e := &command.Executor{}
 	e.SetLogger(logger)
 	s := &CSINodeService{
-		VolumeManager:  *NewVolumeManager(client, e, logger, k8sclient, recorder, nodeID),
-		svc:            common.NewVolumeOperationsImpl(k8sclient, logger),
-		IdentityServer: controller.NewIdentityServer(base.PluginName, base.PluginVersion),
-		volMu:          keymutex.NewHashed(0),
-		livenessCheck:  NewLivenessCheckHelper(logger, nil, nil),
+		k8sClient:        k8sclient,
+		nodeID:           nodeID,
+		VolumeDiscoverer: *NewVolumeDiscoverer(client, e, logger, k8sclient, recorder, nodeID),
+		VolumeController: *NewVolumeController(e, logger, k8sclient, nodeID),
+		svc:              common.NewVolumeOperationsImpl(k8sclient, logger),
+		IdentityServer:   controller.NewIdentityServer(base.PluginName, base.PluginVersion),
+		volMu:            keymutex.NewHashed(0),
+		livenessCheck:    NewLivenessCheckHelper(logger, nil, nil),
 	}
 	s.log = logger.WithField("component", "CSINodeService")
 	return s

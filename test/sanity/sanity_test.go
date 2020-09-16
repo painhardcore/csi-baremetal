@@ -149,7 +149,8 @@ func prepareNodeMock(kubeClient *k8s.KubeClient, log *logrus.Logger) *node.CSINo
 
 	nodeService := node.NewCSINodeService(nil, nodeId, log, kubeClient, new(mocks.NoOpRecorder))
 
-	nodeService.VolumeManager = *node.NewVolumeManager(c, e, log, kubeClient, new(mocks.NoOpRecorder), nodeId)
+	nodeService.VolumeController = *node.NewVolumeController(e, log, kubeClient, nodeId)
+	nodeService.VolumeDiscoverer = *node.NewVolumeDiscoverer(c, e, log, kubeClient, new(mocks.NoOpRecorder), nodeId)
 
 	pMock := provisioners.GetMockProvisionerSuccess("/some/path")
 	nodeService.SetProvisioners(map[p.VolumeType]p.Provisioner{p.DriveBasedVolumeType: pMock})
@@ -157,7 +158,7 @@ func prepareNodeMock(kubeClient *k8s.KubeClient, log *logrus.Logger) *node.CSINo
 	return nodeService
 }
 
-// imitateVolumeManagerReconcile imitates working of VolumeManager's Reconcile loop under not k8s env.
+// imitateVolumeManagerReconcile imitates working of VolumeController's Reconcile loop under not k8s env.
 func imitateVolumeManagerReconcile(kubeClient *k8s.KubeClient) {
 	for range time.Tick(10 * time.Second) {
 		volumes := &vcrd.VolumeList{}

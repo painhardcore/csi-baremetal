@@ -175,7 +175,7 @@ func prepareCRDControllerManagers(volumeCtrl *node.CSINodeService, lvgCtrl *lvm.
 		ll.Fatalf("Unable to create new CRD Controller Manager: %v", err)
 	}
 
-	// bind CSINodeService's VolumeManager to K8s Controller Manager as a controller for Volume CR
+	// bind CSINodeService's VolumeController to K8s Controller Manager as a controller for Volume CR
 	if err = volumeCtrl.SetupWithManager(mgr); err != nil {
 		logger.Fatalf("unable to create controller for volume: %v", err)
 	}
