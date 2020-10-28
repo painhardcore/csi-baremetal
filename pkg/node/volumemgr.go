@@ -795,7 +795,7 @@ func (m *VolumeManager) discoverLVGOnSystemDrive() error {
 		return fmt.Errorf(errTmpl, err)
 	}
 
-	// from container we expect here name like "VG_NAME[/var/lib/kubelet/pods]"
+	// from container we expect here name like "VG_NAME[/etc/hostname]"
 	rootMountPoint = strings.Split(rootMountPoint, "[")[0]
 
 	devices, err := m.listBlk.GetBlockDevices(rootMountPoint)
