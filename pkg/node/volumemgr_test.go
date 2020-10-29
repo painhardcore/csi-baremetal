@@ -653,71 +653,71 @@ func TestVolumeManager_DiscoverSuccess(t *testing.T) {
 	assert.Equal(t, 2, len(getACCRsListItems(t, vm.k8sClient)))
 }
 
-//func TestVolumeManager_Discover_noncleanDisk(t *testing.T) {
-//	/*
-//		test scenario consists of 2 Discover iteration on first:
-//		 - driveMgr returned 2 drives and there are no partition on them from lsblk response, expect that
-//		   2 Drive CRs, 2 AC CRs and 0 Volume CR will be created
-//		on second iteration:
-//		 - driveMgr returned 2 drives and on one of them lsblk detect partition, expect that amount of Drive CRs won't be changed
-//		   1 Volume CR will be created and on AC CR will be removed (1 AC remains)
-//	*/
-//
-//	// fist iteration
-//	vm := prepareSuccessVolumeManager(t)
-//	vm.driveMgrClient = mocks.NewMockDriveMgrClient([]*api.Drive{&drive1, &drive2})
-//	vItems := getVolumeCRsListItems(t, vm.k8sClient)
-//	dItems := getDriveCRsListItems(t, vm.k8sClient)
-//	acItems := getACCRsListItems(t, vm.k8sClient)
-//	assert.Equal(t, 0, len(dItems))
-//	assert.Equal(t, 0, len(vItems))
-//	assert.Equal(t, 0, len(acItems))
-//
-//	listBlk := &mocklu.MockWrapLsblk{}
-//	vm.listBlk = listBlk
-//	listBlk.On("GetBlockDevices", "").Return([]lsblk.BlockDevice{bdev1, bdev2}, nil).Once()
-//	listBlk.On("GetBlockDevices", drive1.Path).Return([]lsblk.BlockDevice{bdev1}, nil).Once()
-//	listBlk.On("GetBlockDevices", drive2.Path).Return([]lsblk.BlockDevice{bdev2}, nil).Once()
-//
-//	err := vm.Discover()
-//	assert.Nil(t, err)
-//
-//	vItems = getVolumeCRsListItems(t, vm.k8sClient)
-//	dItems = getDriveCRsListItems(t, vm.k8sClient)
-//	acItems = getACCRsListItems(t, vm.k8sClient)
-//	assert.Equal(t, 2, len(dItems))
-//	assert.Equal(t, 2, len(acItems))
-//	assert.Equal(t, 0, len(vItems))
-//
-//	// second iteration
-//	bdev2WithChildren := bdev2
-//	bdev2WithChildren.Children = []lsblk.BlockDevice{{Name: "/dev/sda1", PartUUID: testPartUUID}}
-//	listBlk.On("GetBlockDevices", "").Return([]lsblk.BlockDevice{bdev1, bdev2WithChildren}, nil).Once()
-//
-//	err = vm.Discover()
-//	assert.Nil(t, err)
-//
-//	vItems = getVolumeCRsListItems(t, vm.k8sClient)
-//	dItems = getDriveCRsListItems(t, vm.k8sClient)
-//	acItems = getACCRsListItems(t, vm.k8sClient)
-//	assert.Equal(t, 2, len(dItems))
-//	assert.Equal(t, 1, len(acItems))
-//	assert.Equal(t, 1, len(vItems))
-//
-//	var (
-//		sdaDriveUUID string
-//		sdbDriveUUID string
-//	)
-//	for _, d := range dItems {
-//		if d.Spec.SerialNumber == drive1.SerialNumber {
-//			sdaDriveUUID = d.Spec.UUID
-//		} else if d.Spec.SerialNumber == drive2.SerialNumber {
-//			sdbDriveUUID = d.Spec.UUID
-//		}
-//	}
-//	assert.Equal(t, vItems[0].Spec.Location, sdbDriveUUID)
-//	assert.Equal(t, acItems[0].Spec.Location, sdaDriveUUID)
-//}
+func TestVolumeManager_Discover_noncleanDisk(t *testing.T) {
+	/*
+		test scenario consists of 2 Discover iteration on first:
+		 - driveMgr returned 2 drives and there are no partition on them from lsblk response, expect that
+		   2 Drive CRs, 2 AC CRs and 0 Volume CR will be created
+		on second iteration:
+		 - driveMgr returned 2 drives and on one of them lsblk detect partition, expect that amount of Drive CRs won't be changed
+		   1 Volume CR will be created and on AC CR will be removed (1 AC remains)
+	*/
+
+	// fist iteration
+	vm := prepareSuccessVolumeManager(t)
+	vm.driveMgrClient = mocks.NewMockDriveMgrClient([]*api.Drive{&drive1, &drive2})
+	vItems := getVolumeCRsListItems(t, vm.k8sClient)
+	dItems := getDriveCRsListItems(t, vm.k8sClient)
+	acItems := getACCRsListItems(t, vm.k8sClient)
+	assert.Equal(t, 0, len(dItems))
+	assert.Equal(t, 0, len(vItems))
+	assert.Equal(t, 0, len(acItems))
+
+	//listBlk := &mocklu.MockWrapLsblk{}
+	//vm.listBlk = listBlk
+	//listBlk.On("GetBlockDevices", "").Return([]lsblk.BlockDevice{bdev1, bdev2}, nil).Once()
+	//listBlk.On("GetBlockDevices", drive1.Path).Return([]lsblk.BlockDevice{bdev1}, nil).Once()
+	//listBlk.On("GetBlockDevices", drive2.Path).Return([]lsblk.BlockDevice{bdev2}, nil).Once()
+	//
+	//err := vm.Discover()
+	//assert.Nil(t, err)
+	//
+	//vItems = getVolumeCRsListItems(t, vm.k8sClient)
+	//dItems = getDriveCRsListItems(t, vm.k8sClient)
+	//acItems = getACCRsListItems(t, vm.k8sClient)
+	//assert.Equal(t, 2, len(dItems))
+	//assert.Equal(t, 2, len(acItems))
+	//assert.Equal(t, 0, len(vItems))
+	//
+	//// second iteration
+	//bdev2WithChildren := bdev2
+	//bdev2WithChildren.Children = []lsblk.BlockDevice{{Name: "/dev/sda1", PartUUID: testPartUUID}}
+	//listBlk.On("GetBlockDevices", "").Return([]lsblk.BlockDevice{bdev1, bdev2WithChildren}, nil).Once()
+	//
+	//err = vm.Discover()
+	//assert.Nil(t, err)
+	//
+	//vItems = getVolumeCRsListItems(t, vm.k8sClient)
+	//dItems = getDriveCRsListItems(t, vm.k8sClient)
+	//acItems = getACCRsListItems(t, vm.k8sClient)
+	//assert.Equal(t, 2, len(dItems))
+	//assert.Equal(t, 1, len(acItems))
+	//assert.Equal(t, 1, len(vItems))
+	//
+	//var (
+	//	sdaDriveUUID string
+	//	sdbDriveUUID string
+	//)
+	//for _, d := range dItems {
+	//	if d.Spec.SerialNumber == drive1.SerialNumber {
+	//		sdaDriveUUID = d.Spec.UUID
+	//	} else if d.Spec.SerialNumber == drive2.SerialNumber {
+	//		sdbDriveUUID = d.Spec.UUID
+	//	}
+	//}
+	//assert.Equal(t, vItems[0].Spec.Location, sdbDriveUUID)
+	//assert.Equal(t, acItems[0].Spec.Location, sdaDriveUUID)
+}
 
 func TestVolumeManager_DiscoverAvailableCapacitySuccess(t *testing.T) {
 	vm := prepareSuccessVolumeManager(t)
