@@ -35,7 +35,7 @@ const (
 	DefaultExtenderPort = 8889
 
 	// KubeletRootPath is the pods' path on the node
-	KubeletRootPath = "/etc/hostname"
+	KubeletRootPath = "/var/lib/kubelet/pods"
 	// NonRotationalNum points on SSD drive
 	NonRotationalNum = "0"
 

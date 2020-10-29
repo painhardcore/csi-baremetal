@@ -468,6 +468,11 @@ func (m *VolumeManager) updateDrivesCRs(ctx context.Context, drivesFromMgr []*ap
 			// If drive CR already exist, try to update, if drive was changed
 			if m.drivesAreTheSame(drivePtr, &driveCR.Spec) {
 				exist = true
+				isSystem, err := m.isDriveSystem(drivePtr.Path)
+				if err != nil {
+					ll.Errorf("Failed to determine if drive %v is system, error: %v", drivePtr, err)
+				}
+				drivePtr.IsSystem = isSystem
 				if driveCR.Equals(drivePtr) {
 					updates.AddNotChanged(&driveCR)
 				} else {
@@ -795,7 +800,7 @@ func (m *VolumeManager) discoverLVGOnSystemDrive() error {
 		return fmt.Errorf(errTmpl, err)
 	}
 
-	// from container we expect here name like "VG_NAME[/etc/hostname]"
+	// from container we expect here name like "VG_NAME[/var/lib/kubelet/pods]"
 	rootMountPoint = strings.Split(rootMountPoint, "[")[0]
 
 	devices, err := m.listBlk.GetBlockDevices(rootMountPoint)
