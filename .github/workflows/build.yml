@@ -1,0 +1,24 @@
+name: Validate build
+
+on: [push, pull_request]
+
+jobs:
+
+  build:
+    name: Build
+    runs-on: docker.pkg.github.com/painhardcore/builder/builder:latest
+    steps:
+    - name: Check out code into the Go module directory
+      uses: actions/checkout@v2
+
+    - name: Compile proto files
+      run:  make compile-proto
+      
+    - name: Generate CRD
+      run:  make generate-deepcopy
+      
+    - name: Get dependencies
+      run:  make dependency
+      
+    - name: Build
+      run: make build
