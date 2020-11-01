@@ -51,7 +51,7 @@ type NVMDevice struct {
 	ModelNumber  string `json:"ModelNumber,omitempty"`
 	SerialNumber string `json:"SerialNumber,omitempty"`
 	PhysicalSize int64  `json:"PhysicalSize,omitempty"`
-	//Can VID be string for nvme?
+	// Can VID be string for nvme?
 	Vendor int `json:"vid,omitempty"`
 	Health string
 }
