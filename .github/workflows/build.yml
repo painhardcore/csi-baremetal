@@ -15,7 +15,10 @@ jobs:
     steps:
     - name: Check out code into the Go module directory
       uses: actions/checkout@v2
-
+      
+    - name: install lvm2 on host system
+      run:  apt-get update && apt-get install -y lvm2
+      
     - name: Compile proto files
       run:  make compile-proto
       
