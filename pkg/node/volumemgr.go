@@ -196,7 +196,7 @@ func (m *VolumeManager) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 		}
 	}()
 	ctx, cancelFn := context.WithTimeout(
-		context.WithValue(context.Background(), k8s.RequestUUID, req.Name),
+		context.WithValue(context.Background(), base.RequestUUID, req.Name),
 		VolumeOperationsTimeout)
 	defer cancelFn()
 
@@ -475,6 +475,9 @@ func (m *VolumeManager) updateDrivesCRs(ctx context.Context, drivesFromMgr []*ap
 					drivePtr.UUID = driveCR.Spec.UUID
 					toUpdate := driveCR
 					toUpdate.Spec = *drivePtr
+					if toUpdate.Spec.Health != apiV1.HealthGood {
+						toUpdate.Spec.OperationalStatus = apiV1.DriveOpStatusReleasing
+					}
 					if err := m.k8sClient.UpdateCR(ctx, &toUpdate); err != nil {
 						ll.Errorf("Failed to update drive CR (health/status) %v, error %v", toUpdate, err)
 						updates.AddNotChanged(previousState)
@@ -491,6 +494,8 @@ func (m *VolumeManager) updateDrivesCRs(ctx context.Context, drivesFromMgr []*ap
 			toCreateSpec := *drivePtr
 			toCreateSpec.NodeId = m.nodeID
 			toCreateSpec.UUID = uuid.New().String()
+			// TODO: what operational status should be if drivemgr reported drive with not a good health
+			toCreateSpec.OperationalStatus = apiV1.DriveOpStatusOperative
 			isSystem, err := m.isDriveSystem(drivePtr.Path)
 			if err != nil {
 				ll.Errorf("Failed to determine if drive %v is system, error: %v", drivePtr, err)
@@ -533,6 +538,7 @@ func (m *VolumeManager) updateDrivesCRs(ctx context.Context, drivesFromMgr []*ap
 			ll.Warnf("Set status OFFLINE for drive %v", d.Spec)
 			previousState := d.DeepCopy()
 			toUpdate := d
+			// TODO: which operational status should be in case when there is drive CR that doesn't have corresponding drive from drivemgr response
 			toUpdate.Spec.Status = apiV1.DriveStatusOffline
 			toUpdate.Spec.Health = apiV1.HealthUnknown
 			if err := m.k8sClient.UpdateCR(ctx, &toUpdate); err != nil {
@@ -655,7 +661,9 @@ func (m *VolumeManager) discoverVolumeCRs(freeDrives []*drivecrd.Drive) error {
 				ll.Warnf("There is no part UUID for partition from device %v, UUID has been generated %s", bdev, partUUID)
 			}
 
-			volumeCR := m.k8sClient.ConstructVolumeCR(partUUID, api.Volume{
+			volUUID := uuid.New().String() // generate new uuid to use it for  volume CR name
+
+			volumeCR := m.k8sClient.ConstructVolumeCR(volUUID, api.Volume{
 				NodeId:       m.nodeID,
 				Id:           partUUID,
 				Size:         size,
@@ -667,9 +675,9 @@ func (m *VolumeManager) discoverVolumeCRs(freeDrives []*drivecrd.Drive) error {
 				CSIStatus:    "",
 			})
 
-			ctxWithID := context.WithValue(context.Background(), k8s.RequestUUID, volumeCR.Name)
-			if err = m.k8sClient.CreateCR(ctxWithID, partUUID, volumeCR); err != nil {
-				ll.Errorf("Unable to create volume CR %s: %v", partUUID, err)
+			ctxWithID := context.WithValue(context.Background(), base.RequestUUID, volumeCR.Name)
+			if err = m.k8sClient.CreateCR(ctxWithID, volUUID, volumeCR); err != nil {
+				ll.Errorf("Unable to create volume CR %s: %v", volUUID, err)
 			}
 		}
 	}
@@ -743,7 +751,7 @@ func (m *VolumeManager) discoverAvailableCapacity(ctx context.Context, freeDrive
 		name := uuid.New().String()
 
 		newAC := m.k8sClient.ConstructACCR(name, *capacity)
-		if err := m.k8sClient.CreateCR(context.WithValue(ctx, k8s.RequestUUID, name),
+		if err := m.k8sClient.CreateCR(context.WithValue(ctx, base.RequestUUID, name),
 			name, newAC); err != nil {
 			ll.Errorf("Error during CreateAvailableCapacity request to k8s: %v, error: %v",
 				capacity, err)
@@ -792,7 +800,11 @@ func (m *VolumeManager) discoverLVGOnSystemDrive() error {
 	)
 
 	if rootMountPoint, err = m.fsOps.FindMountPoint(base.KubeletRootPath); err != nil {
-		return fmt.Errorf(errTmpl, err)
+		ll.Errorf("Failed to find root mountpoint for %s, error: %v, try to find for %s",
+			base.KubeletRootPath, err, base.HostRootPath)
+		if rootMountPoint, err = m.fsOps.FindMountPoint(base.HostRootPath); err != nil {
+			return fmt.Errorf(errTmpl, err)
+		}
 	}
 
 	// from container we expect here name like "VG_NAME[/var/lib/kubelet/pods]"
@@ -843,7 +855,7 @@ func (m *VolumeManager) discoverLVGOnSystemDrive() error {
 			VolumeRefs: lvs,
 		}
 		vgCR = m.k8sClient.ConstructLVGCR(vgCRName, vg)
-		ctx  = context.WithValue(context.Background(), k8s.RequestUUID, vg.Name)
+		ctx  = context.WithValue(context.Background(), base.RequestUUID, vg.Name)
 	)
 	if err = m.k8sClient.CreateCR(ctx, vg.Name, vgCR); err != nil {
 		return fmt.Errorf("unable to create LVG CR %v, error: %v", vgCR, err)
@@ -1037,7 +1049,7 @@ func (m *VolumeManager) isDriveSystem(path string) (bool, error) {
 // Returns true if device has root mountpoint, false in opposite
 func (m *VolumeManager) isRootMountpoint(devs []lsblk.BlockDevice) bool {
 	for _, device := range devs {
-		if strings.TrimSpace(device.MountPoint) == base.KubeletRootPath {
+		if strings.TrimSpace(device.MountPoint) == base.KubeletRootPath || strings.TrimSpace(device.MountPoint) == base.HostRootPath {
 			return true
 		}
 		if m.isRootMountpoint(device.Children) {
