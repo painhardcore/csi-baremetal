@@ -1,0 +1,38 @@
+name: Validate build
+
+on: [push, pull_request]
+
+jobs:
+
+  build:
+    name: Build && test
+    runs-on: ubuntu-18.04
+    container:
+      image: docker.pkg.github.com/painhardcore/builder/builder:latest
+      credentials:
+       username: ${{ github.actor }}
+       password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+    - name: Check out code into the Go module directory
+      uses: actions/checkout@v2
+      
+    - name: install lvm2 on host system
+      run:  apt-get update && apt-get install -y lvm2
+      
+    - name: Compile proto files
+      run:  make compile-proto
+      
+    - name: Generate CRD
+      run:  make generate-deepcopy
+      
+    - name: Get dependencies
+      run:  make dependency
+      
+    - name: Lint
+      run: make lint
+      
+    - name: test
+      run: CI=false make test
+      
+    - name: Build
+      run: make build
