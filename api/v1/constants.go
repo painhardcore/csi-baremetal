@@ -28,13 +28,16 @@ const (
 	// TODO: change value, https://github.com/dell/csi-baremetal/issues/134
 	CSICRsGroupVersion = "baremetal-csi.dellemc.com"
 	APIV1Version       = "baremetal-csi.dellemc.com/v1"
-	Creating           = "creating"
-	Created            = "created"
-	VolumeReady        = "volumeReady"
-	Published          = "published"
-	Removing           = "removing"
-	Removed            = "removed"
-	Failed             = "failed"
+
+	// CSI statuses
+	Creating    = "CREATING"
+	Created     = "CREATED"
+	VolumeReady = "VOLUME_READY"
+	Published   = "PUBLISHED"
+	Removing    = "REMOVING"
+	Removed     = "REMOVED"
+	Failed      = "FAILED"
+	Empty       = ""
 
 	// Health statuses
 	HealthUnknown = "UNKNOWN"
@@ -42,34 +45,50 @@ const (
 	HealthSuspect = "SUSPECT"
 	HealthBad     = "BAD"
 
+	// TODO need to split constants by different packages
 	// Drive status
 	DriveStatusOnline  = "ONLINE"
 	DriveStatusOffline = "OFFLINE"
 
-	// Drive OperationalStatus
-	DriveOpStatusOperative = "OPERATIVE"
-	DriveOpStatusReleasing = "RELEASING"
-	DriveOpStatusReleased  = "RELEASED"
-	DriveOpStatusFailed    = "FAILED"
-	DriveOpStatusRemoving  = "REMOVING"
-	DriveOpStatusRemoved   = "REMOVED"
+	// Drive Usage status
+	DriveUsageInUse     = "IN_USE"
+	DriveUsageReleasing = "RELEASING"
+	DriveUsageReleased  = "RELEASED"
+	DriveUsageFailed    = "FAILED"
+	DriveUsageRemoving  = "REMOVING"
+	DriveUsageRemoved   = "REMOVED"
 
 	// Drive type
 	DriveTypeHDD  = "HDD"
 	DriveTypeSSD  = "SSD"
 	DriveTypeNVMe = "NVME"
 
+	// Drive annotations
+	DriveAnnotationReplacement        = "replacement"
+	DriveAnnotationReplacementReady   = "ready"
+	DriveAnnotationVolumeStatusPrefix = "status"
+
 	// Volume operational status
-	OperationalStatusOperative     = "OPERATIVE"
-	OperationalStatusInoperative   = "INOPERATIVE"
-	OperationalStatusStaging       = "STAGING"
-	OperationalStatusMissing       = "MISSING"
-	OperationalStatusRemoving      = "REMOVING"
-	OperationalStatusReadyToRemove = "READY_TO_REMOVE"
-	OperationalStatusFailToRemove  = "FAIL_TO_REMOVE"
-	OperationalStatusMaintenance   = "MAINTENANCE"
-	OperationalStatusRemoved       = "REMOVED"
-	OperationalStatusUnknown       = "UNKNOWN"
+	OperationalStatusOperative   = "OPERATIVE"
+	OperationalStatusInoperative = "INOPERATIVE"
+	OperationalStatusStaging     = "STAGING"
+	OperationalStatusMissing     = "MISSING"
+	OperationalStatusMaintenance = "MAINTENANCE"
+	OperationalStatusUnknown     = "UNKNOWN"
+
+	// Volume Usage status
+	VolumeUsageInUse     = DriveUsageInUse
+	VolumeUsageReleasing = DriveUsageReleasing
+	VolumeUsageReleased  = DriveUsageReleased
+	VolumeUsageFailed    = DriveUsageFailed
+
+	// Release Volume annotations
+	VolumeAnnotationRelease       = "release"
+	VolumeAnnotationReleaseDone   = "done"
+	VolumeAnnotationReleaseFailed = "failed"
+	VolumeAnnotationReleaseStatus = "status"
+
+	// TODO Mount status?
 
 	// Volume mode
 	ModeRAW = "RAW"
@@ -81,6 +100,7 @@ const (
 	LocationTypeNVMe  = "NVME"
 
 	// CSI StorageClass
+	// For volumes with storage class 'ANY' CSI will pick any AC except LVG AC
 	StorageClassAny       = "ANY"
 	StorageClassHDD       = "HDD"
 	StorageClassSSD       = "SSD"
@@ -89,4 +109,11 @@ const (
 	StorageClassSSDLVG    = "SSDLVG"
 	StorageClassNVMeLVG   = "NVMELVG"
 	StorageClassSystemLVG = "SYSLVG"
+
+	LocateStart  = int32(0)
+	LocateStop   = int32(1)
+	LocateStatus = int32(2)
+
+	LocateStatusOn  = int32(1)
+	LocateStatusOff = int32(0)
 )

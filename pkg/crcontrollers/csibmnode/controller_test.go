@@ -3,6 +3,7 @@ package csibmnode
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
@@ -17,6 +18,7 @@ import (
 	crdV1 "github.com/dell/csi-baremetal/api/v1"
 	nodecrd "github.com/dell/csi-baremetal/api/v1/csibmnodecrd"
 	"github.com/dell/csi-baremetal/pkg/base/k8s"
+	"github.com/dell/csi-baremetal/pkg/crcontrollers/csibmnode/common"
 )
 
 var (
@@ -60,11 +62,14 @@ var (
 		},
 	}
 
+	osName    = "ubuntu"
+	osVersion = "18.04"
 	testNode1 = coreV1.Node{
 		ObjectMeta: metaV1.ObjectMeta{
 			Name:        "node-1",
 			Namespace:   testNS,
-			Annotations: map[string]string{}},
+			Annotations: map[string]string{},
+			Labels:      map[string]string{}},
 		Status: coreV1.NodeStatus{
 			Addresses: convertCSIBMNodeAddrsToK8sNodeAddrs(testCSIBMNode1.Spec.Addresses),
 		},
@@ -73,9 +78,11 @@ var (
 		ObjectMeta: metaV1.ObjectMeta{
 			Name:        "node-2",
 			Namespace:   testNS,
-			Annotations: map[string]string{}},
+			Annotations: map[string]string{},
+			Labels:      map[string]string{}},
 		Status: coreV1.NodeStatus{
 			Addresses: convertCSIBMNodeAddrsToK8sNodeAddrs(testCSIBMNode2.Spec.Addresses),
+			//NodeInfo: coreV1.NodeSystemInfo{OSImage: "Ubuntu 19.10"},
 		},
 	}
 )
@@ -152,7 +159,7 @@ func TestReconcile(t *testing.T) {
 		assert.Equal(t, ctrl.Result{}, res)
 
 		nodeCR := new(coreV1.Node)
-		assert.Nil(t, c.k8sClient.ReadCR(testCtx, node.Name, nodeCR))
+		assert.Nil(t, c.k8sClient.ReadCR(testCtx, node.Name, "", nodeCR))
 
 		val, ok := nodeCR.GetAnnotations()[nodeIDAnnotationKey]
 		assert.True(t, ok)
@@ -207,7 +214,7 @@ func Test_reconcileForK8sNode(t *testing.T) {
 		bmNode := bmNodesList.Items[0]
 		assert.Equal(t, len(bmNode.Spec.Addresses), c.matchedAddressesCount(&bmNode, k8sNode))
 
-		assert.Nil(t, c.k8sClient.ReadCR(testCtx, k8sNode.Name, k8sNode))
+		assert.Nil(t, c.k8sClient.ReadCR(testCtx, k8sNode.Name, "", k8sNode))
 		val, ok := k8sNode.GetAnnotations()[nodeIDAnnotationKey]
 		assert.True(t, ok)
 		assert.Equal(t, bmNode.Spec.UUID, val)
@@ -258,7 +265,7 @@ func Test_reconcileForK8sNode(t *testing.T) {
 
 		// read node obj
 		nodeObj := new(coreV1.Node)
-		assert.Nil(t, c.k8sClient.ReadCR(testCtx, k8sNode.Name, nodeObj))
+		assert.Nil(t, c.k8sClient.ReadCR(testCtx, k8sNode.Name, "", nodeObj))
 		_, ok := nodeObj.GetAnnotations()[nodeIDAnnotationKey]
 		assert.False(t, ok)
 	})
@@ -280,13 +287,37 @@ func Test_reconcileForK8sNode(t *testing.T) {
 
 		// read node obj
 		nodeObj := new(coreV1.Node)
-		assert.Nil(t, c.k8sClient.ReadCR(testCtx, k8sNode.Name, nodeObj))
+		assert.Nil(t, c.k8sClient.ReadCR(testCtx, k8sNode.Name, "", nodeObj))
 		_, ok := nodeObj.GetAnnotations()[nodeIDAnnotationKey]
 		assert.False(t, ok)
 	})
 }
 
 func Test_reconcileForCSIBMNode(t *testing.T) {
+	t.Run("CSIBMNode is being deleted. Annotation was removed.", func(t *testing.T) {
+		var (
+			c       = setup(t)
+			bmNode  = testCSIBMNode1.DeepCopy()
+			k8sNode = testNode1.DeepCopy()
+		)
+
+		k8sNode.Annotations[nodeIDAnnotationKey] = "aaaa-bbbb-cccc-dddd"
+		bmNode.DeletionTimestamp = &metaV1.Time{Time: time.Now()}
+
+		createObjects(t, c.k8sClient, bmNode, k8sNode)
+
+		res, err := c.reconcileForCSIBMNode(bmNode)
+		assert.Nil(t, err)
+		assert.Equal(t, ctrl.Result{}, res)
+
+		nodeObj := new(coreV1.Node)
+		assert.Nil(t, c.k8sClient.ReadCR(testCtx, k8sNode.Name, "", nodeObj))
+		_, ok := nodeObj.GetAnnotations()[nodeIDAnnotationKey]
+		assert.False(t, ok)
+		enabled := c.isEnabledForNode(nodeObj.Name)
+		assert.False(t, enabled)
+	})
+
 	t.Run("CSIBMNode addresses length is 0", func(t *testing.T) {
 		var (
 			c      = setup(t)
@@ -332,7 +363,7 @@ func Test_reconcileForCSIBMNode(t *testing.T) {
 
 		// read node obj
 		nodeObj := new(coreV1.Node)
-		assert.Nil(t, c.k8sClient.ReadCR(testCtx, k8sNode.Name, nodeObj))
+		assert.Nil(t, c.k8sClient.ReadCR(testCtx, k8sNode.Name, "", nodeObj))
 		_, ok := nodeObj.GetAnnotations()[nodeIDAnnotationKey]
 		assert.False(t, ok)
 	})
@@ -354,30 +385,42 @@ func Test_reconcileForCSIBMNode(t *testing.T) {
 
 		// read node obj
 		nodeObj := new(coreV1.Node)
-		assert.Nil(t, c.k8sClient.ReadCR(testCtx, k8sNode1.Name, nodeObj))
+		assert.Nil(t, c.k8sClient.ReadCR(testCtx, k8sNode1.Name, "", nodeObj))
 		_, ok := nodeObj.GetAnnotations()[nodeIDAnnotationKey]
 		assert.False(t, ok)
-		assert.Nil(t, c.k8sClient.ReadCR(testCtx, k8sNode2.Name, nodeObj))
+		assert.Nil(t, c.k8sClient.ReadCR(testCtx, k8sNode2.Name, "", nodeObj))
 		_, ok = nodeObj.GetAnnotations()[nodeIDAnnotationKey]
 		assert.False(t, ok)
 	})
 }
 
-func Test_checkAnnotation(t *testing.T) {
+func Test_checkAnnotationAndLabels(t *testing.T) {
 	testCases := []struct {
-		description  string
-		currentValue string
-		goalValue    string
+		description                string
+		currentAnnotationValue     string
+		targetAnnotationValue      string
+		currentOsNameLabelValue    string
+		targetOsNameLabelValue     string
+		currentOsVersionLabelValue string
+		targetOsVersionLabelValue  string
 	}{
 		{
-			description:  "Node has needed annotation with goal value",
-			currentValue: "aaaa-bbbb",
-			goalValue:    "aaaa-bbbb",
+			description:                "Node has required annotation and labels",
+			currentAnnotationValue:     "aaaa-bbbb",
+			targetAnnotationValue:      "aaaa-bbbb",
+			currentOsNameLabelValue:    osName,
+			targetOsNameLabelValue:     osName,
+			currentOsVersionLabelValue: osVersion,
+			targetOsVersionLabelValue:  osVersion,
 		},
 		{
-			description:  "Node has needed annotation with another value",
-			currentValue: "aaaa-bbbb",
-			goalValue:    "ffff-dddd",
+			description:                "Node has required annotation and labels with wrong values",
+			currentAnnotationValue:     "aaaa-bbbb",
+			targetAnnotationValue:      "ffff-dddd",
+			currentOsNameLabelValue:    osName,
+			targetOsNameLabelValue:     osName,
+			currentOsVersionLabelValue: osVersion,
+			targetOsVersionLabelValue:  "19.10",
 		},
 	}
 
@@ -388,18 +431,33 @@ func Test_checkAnnotation(t *testing.T) {
 				node = testNode1.DeepCopy()
 			)
 
-			node.Annotations[nodeIDAnnotationKey] = testCase.currentValue
+			// set annotation
+			node.Annotations[nodeIDAnnotationKey] = testCase.currentAnnotationValue
+			// set OS image and labels
+			node.Status.NodeInfo.OSImage = testCase.targetOsNameLabelValue + " " + testCase.targetOsVersionLabelValue
+			node.Labels[common.NodeOSNameLabelKey] = testCase.currentOsNameLabelValue
+			node.Labels[common.NodeOSVersionLabelKey] = testCase.currentOsVersionLabelValue
+
 			createObjects(t, c.k8sClient, node)
-			res, err := c.updateAnnotation(node, testCase.goalValue)
+			res, err := c.updateNodeLabelsAndAnnotation(node, testCase.targetAnnotationValue)
 			assert.Nil(t, err)
 			assert.Equal(t, ctrl.Result{}, res)
 
 			// read node obj
 			nodeObj := new(coreV1.Node)
-			assert.Nil(t, c.k8sClient.ReadCR(testCtx, node.Name, nodeObj))
+			assert.Nil(t, c.k8sClient.ReadCR(testCtx, node.Name, "", nodeObj))
+			// check annotations
 			val, ok := nodeObj.GetAnnotations()[nodeIDAnnotationKey]
 			assert.True(t, ok)
-			assert.Equal(t, testCase.goalValue, val)
+			assert.Equal(t, testCase.targetAnnotationValue, val)
+			// check os name label
+			val, ok = nodeObj.GetLabels()[common.NodeOSNameLabelKey]
+			assert.True(t, ok)
+			assert.Equal(t, testCase.targetOsNameLabelValue, val)
+			// check os version label
+			val, ok = nodeObj.GetLabels()[common.NodeOSVersionLabelKey]
+			assert.True(t, ok)
+			assert.Equal(t, testCase.targetOsVersionLabelValue, val)
 		})
 	}
 }

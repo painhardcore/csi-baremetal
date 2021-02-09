@@ -53,7 +53,9 @@ def run():
         '--backup-path', help="Set path for backup folder", default='/etc/kubernetes/scheduler')
     args = parser.parse_args()
 
-    logging.basicConfig(level=logging.getLevelName(args.loglevel.upper()))
+    lvl = args.loglevel.upper()
+ 
+    logging.basicConfig(level=logging.getLevelName(normalize_logging_level(lvl)))
 
     log.info('patcher started')
 
@@ -87,6 +89,9 @@ def run():
         manifest.load()
         manifest.patch()
 
+        # todo on a first run we need to change inode for a scheduler config to trigger pod restart to make sure
+        # <todo> that configuration delivered. this is also affects e2e tests, refer for details -
+        # <todo> https://github.com/dell/csi-baremetal/issues/236
         if manifest.changed:
             manifest.backup()
             manifest.flush()
@@ -101,8 +106,11 @@ class GracefulKiller:
         self.restore = restore
         self.file = file
 
+    # restore original configuration if restore parameter passed
     def exit_gracefully(self, signum, frame):
+        log.info('handling signal {}...'.format(signum))
         if self.restore:
+            log.info('restoring original scheduler config...')
             self.file.restore()
             sys.exit(0)
 
@@ -217,6 +225,11 @@ def copy_not_equal(src, dst):
         src.copy(dst)
         log.info('{} copied to {}'.format(src.path, dst.path))
 
+
+def normalize_logging_level(lvl):
+    if lvl == "TRACE":
+        return "DEBUG"
+    return lvl
 
 if __name__ == "__main__":
     run()

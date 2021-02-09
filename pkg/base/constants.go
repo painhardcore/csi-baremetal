@@ -25,11 +25,13 @@ type CtxKey string
 const (
 	// RequestUUID is the constant for context request
 	RequestUUID CtxKey = "RequestUUID"
+	// VolumeNamespace is the constant for context request
+	VolumeNamespace CtxKey = "VolumeNamespace"
 	// PluginName is a name of current CSI plugin
 	PluginName = "baremetal-csi"
 	// PluginVersion is a version of current CSI plugin
 	// TODO: get rid of hardcoded value https://github.com/dell/csi-baremetal/issues/79
-	PluginVersion = "0.0.11"
+	PluginVersion = "0.0.13"
 	// DefaultDriveMgrEndpoint is the default gRPC endpoint for drivemgr
 	DefaultDriveMgrEndpoint = "tcp://:8888"
 	// DefaultHealthIP is the default gRPC IP for Health server
@@ -43,19 +45,13 @@ const (
 	KubeletRootPath = "/var/lib/kubelet/pods"
 
 	// HostRootPath is root mount
-	HostRootPath = "/hostroot/sysroot"
-
-	// NonRotationalNum points on SSD drive
-	NonRotationalNum = "0"
+	HostRootPath = "/hostroot"
 
 	// DefaultTimeoutForVolumeOperations is the timeout in which we expect that any operation with volume should be finished
 	DefaultTimeoutForVolumeOperations = 10 * time.Minute
 
 	// DefaultRequeueForVolume is the interval for volume reconcile
 	DefaultRequeueForVolume = 5 * time.Second
-
-	// SystemDriveAsLocation is the const to fill Location field in CRs if the location based on system drive
-	SystemDriveAsLocation = "system drive"
 
 	// DefaultFsType FS type that used by default
 	DefaultFsType = "xfs"
@@ -64,4 +60,8 @@ const (
 	StorageTypeKey = "storageType"
 	// SizeKey key from volume_context in CreateVolumeRequest of NodePublishVolumeRequest
 	SizeKey = "size"
+	// DefaultNamespace represents default namespace in Kubernetes
+	DefaultNamespace = "default"
+	// PVCNamespaceKey is a key from volume_context in CreateVolumeRequest of NodePublishVolumeRequest
+	PVCNamespaceKey = "csi.storage.k8s.io/pvc/namespace"
 )

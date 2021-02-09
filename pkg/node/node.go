@@ -37,6 +37,7 @@ import (
 	api "github.com/dell/csi-baremetal/api/generated/v1"
 	apiV1 "github.com/dell/csi-baremetal/api/v1"
 	"github.com/dell/csi-baremetal/pkg/base"
+	"github.com/dell/csi-baremetal/pkg/base/cache"
 	"github.com/dell/csi-baremetal/pkg/base/command"
 	"github.com/dell/csi-baremetal/pkg/base/featureconfig"
 	"github.com/dell/csi-baremetal/pkg/base/k8s"
@@ -65,6 +66,8 @@ type CSINodeService struct {
 const (
 	// PodNameKey to read pod name from PodInfoOnMount feature
 	PodNameKey = "csi.storage.k8s.io/pod.name"
+	// PodNamespaceKey to read pod namespace from PodInfoOnMount feature
+	PodNamespaceKey = "csi.storage.k8s.io/pod.namespace"
 	// UnknownPodName is used when pod name isn't provided in request
 	UnknownPodName = "UNKNOWN"
 	// EphemeralKey in volume context means that in node publish request we need to create ephemeral volume
@@ -85,7 +88,7 @@ func NewCSINodeService(client api.DriveServiceClient,
 	e.SetLogger(logger)
 	s := &CSINodeService{
 		VolumeManager:  *NewVolumeManager(client, e, logger, k8sclient, recorder, nodeID),
-		svc:            common.NewVolumeOperationsImpl(k8sclient, logger, featureConf),
+		svc:            common.NewVolumeOperationsImpl(k8sclient, logger, cache.NewMemCache(), featureConf),
 		IdentityServer: controller.NewIdentityServer(base.PluginName, base.PluginVersion),
 		volMu:          keymutex.NewHashed(0),
 		livenessCheck:  NewLivenessCheckHelper(logger, nil, nil),
@@ -190,7 +193,7 @@ func (s *CSINodeService) NodeStageVolume(ctx context.Context, req *csi.NodeStage
 
 	if currStatus != apiV1.VolumeReady || newStatus == apiV1.Failed {
 		volumeCR.Spec.CSIStatus = newStatus
-		if err := s.crHelper.UpdateVolumeCRSpec(volumeCR.Name, volumeCR.Spec); err != nil {
+		if err := s.crHelper.UpdateVolumeCRSpec(volumeCR.Name, volumeCR.Namespace, volumeCR.Spec); err != nil {
 			ll.Errorf("Unable to set volume status to %s: %v", newStatus, err)
 			resp, errToReturn = nil, fmt.Errorf("failed to stage volume: update volume CR error")
 		}
@@ -244,10 +247,6 @@ func (s *CSINodeService) NodeUnstageVolume(ctx context.Context, req *csi.NodeUns
 		return nil, status.Error(codes.FailedPrecondition, msg)
 	}
 
-	// This is a temporary solution to clear all owners during NodeUnstage
-	// because NodeUnpublishRequest doesn't contain info about pod
-	// TODO: remove owner from Owners slice during Unpublish properly - https://github.com/dell/csi-baremetal/issues/86
-	// volumeCR.Spec.Owners = nil
 	volumeCR.Spec.CSIStatus = apiV1.Created
 
 	var (
@@ -368,20 +367,18 @@ func (s *CSINodeService) NodePublishVolume(ctx context.Context, req *csi.NodePub
 		resp, errToReturn = nil, fmt.Errorf("failed to publish volume: mount error")
 	}
 
-	// TODO: need to provide better logic for volumes Owners https://github.com/dell/csi-baremetal/issues/86
-	// add volume owner info
-	// var podName string
-	// podName, ok := req.VolumeContext[PodNameKey]
-	// if !ok {
-	//	podName = UnknownPodName
-	//	ll.Warnf("flag podInfoOnMount isn't provided will add %s for volume owners", podName)
-	// }
-	//
-	// owners := volumeCR.Spec.Owners
-	// if !util.ContainsString(owners, podName) { // check whether podName already in owners or no
-	//	owners = append(owners, podName)
-	//	volumeCR.Spec.Owners = owners
-	// }
+	var podName string
+	podName, ok := req.VolumeContext[PodNameKey]
+	if !ok {
+		podName = UnknownPodName
+		ll.Warnf("flag podInfoOnMount isn't provided will add %s for volume owners", podName)
+	}
+
+	owners := volumeCR.Spec.Owners
+	if !util.ContainsString(owners, podName) { // check whether podName already in owners or no
+		owners = append(owners, podName)
+		volumeCR.Spec.Owners = owners
+	}
 
 	ctxWithID := context.WithValue(context.Background(), base.RequestUUID, volumeID)
 	volumeCR.Spec.CSIStatus = newStatus
@@ -407,7 +404,13 @@ func (s *CSINodeService) createInlineVolume(ctx context.Context, volumeID string
 		scl           string
 		bytes         int64
 		err           error
+		namespace     string
 	)
+	namespace, ok := volumeContext[PodNamespaceKey]
+	if !ok {
+		namespace = base.DefaultNamespace
+	}
+	ctxWithNamespace := context.WithValue(ctx, base.VolumeNamespace, namespace)
 
 	if bytes, err = util.StrToBytes(bytesStr); err != nil {
 		return nil, err
@@ -428,7 +431,7 @@ func (s *CSINodeService) createInlineVolume(ctx context.Context, volumeID string
 	}
 
 	s.reqMu.Lock()
-	vol, err := s.svc.CreateVolume(ctx, api.Volume{
+	vol, err := s.svc.CreateVolume(ctxWithNamespace, api.Volume{
 		Id:           volumeID,
 		StorageClass: scl,
 		NodeId:       s.nodeID,
@@ -504,11 +507,8 @@ func (s *CSINodeService) NodeUnpublishVolume(ctx context.Context, req *csi.NodeU
 		}
 		return nil, status.Error(codes.Internal, "unmount error")
 	}
-	// If volume has more than 1 owner pods then keep its status as Published
-	// if len(volumeCR.Spec.Owners) > 1 {
-	//	return &csi.NodeUnpublishVolumeResponse{}, nil
-	// }
 
+	volumeCR.Spec.Owners = nil
 	// k8s doesn't call DeleteVolume for inline volumes, so we perform DeleteVolume operation in Unpublish request
 	if volumeCR.Spec.Ephemeral {
 		s.reqMu.Lock()

@@ -12,6 +12,11 @@ spec:
     metadata:
       labels:
         app: baremetal-csi-node
+        app.kubernetes.io/name: csi-baremetal
+      annotations:
+        prometheus.io/scrape: 'true'
+        prometheus.io/port: '{{ .Values.node.metrics.port }}'
+        prometheus.io/path: '{{ .Values.node.metrics.path }}'
     spec:
       {{- if or (.Values.nodeSelector.key) (.Values.nodeSelector.value)}}
       nodeSelector:
@@ -63,6 +68,8 @@ spec:
           - --extender={{ .Values.feature.extender }}
           - --usenodeannotation={{ .Values.feature.usenodeannotation }}
           - --loglevel={{ .Values.log.level }}
+          - --metrics-address=:{{ .Values.node.metrics.port }}
+          - --metrics-path={{ .Values.node.metrics.path }}
           {{- if .Values.logReceiver.create  }}
           - --logpath=/var/log/csi.log
           {{- end }}
@@ -76,6 +83,11 @@ spec:
           - name: liveness-port
             containerPort: 9808
             protocol: TCP
+          {{- if .Values.node.metrics.port }}
+          - name: metrics
+            containerPort: {{ .Values.node.metrics.port }}
+            protocol: TCP
+          {{- end }}
         livenessProbe:
           failureThreshold: 5
           httpGet:
@@ -135,6 +147,10 @@ spec:
           mountPath: /hostroot
           mountPropagation: "HostToContainer"
         {{- end }}
+        {{- if eq .Values.alerts.deployConfig true }}
+        - name: alert-config
+          mountPath: /etc/config
+        {{- end }}
       # ********************** baremetal-csi-drivemgr container definition **********************
       - name: drivemgr
         image: {{- if .Values.env.test }} baremetal-csi-plugin-{{ .Values.drivemgr.type }}:{{ default .Values.image.tag .Values.drivemgr.image.tag }}
@@ -146,6 +162,9 @@ spec:
         args:
           - --loglevel={{ .Values.log.level }}
           - --drivemgrendpoint={{ .Values.drivemgr.grpc.server.endpoint }}
+        {{- if eq .Values.drivemgr.type "loopbackmgr"}}
+          - --usenodeannotation={{ .Values.feature.usenodeannotation }}
+        {{- end }}
         {{- if .Values.logReceiver.create  }}
           - --logpath=/var/log/drivemgr.log
         {{- end }}
@@ -273,5 +292,10 @@ spec:
       - name: drive-config
         configMap:
           name: loopback-config
+      {{- end }}
+      {{- if eq .Values.alerts.deployConfig true }}
+      - name: alert-config
+        configMap:
+          name: csi-baremetal-alerts
       {{- end }}
 {{- end }}

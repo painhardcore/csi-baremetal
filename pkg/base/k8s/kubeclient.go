@@ -40,6 +40,8 @@ import (
 	"github.com/dell/csi-baremetal/api/v1/lvgcrd"
 	"github.com/dell/csi-baremetal/api/v1/volumecrd"
 	"github.com/dell/csi-baremetal/pkg/base"
+	"github.com/dell/csi-baremetal/pkg/metrics"
+	"github.com/dell/csi-baremetal/pkg/metrics/common"
 )
 
 // CtxKey variable type uses for keys in context WithValue
@@ -58,6 +60,7 @@ type KubeClient struct {
 	k8sCl.Client
 	log       *logrus.Entry
 	Namespace string
+	metrics   metrics.Statistic
 }
 
 // NewKubeClient is the constructor for KubeClient struct
@@ -68,6 +71,7 @@ func NewKubeClient(k8sclient k8sCl.Client, logger *logrus.Logger, namespace stri
 		Client:    k8sclient,
 		log:       logger.WithField("component", "KubeClient"),
 		Namespace: namespace,
+		metrics:   common.KubeclientDuration,
 	}
 }
 
@@ -75,6 +79,7 @@ func NewKubeClient(k8sclient k8sCl.Client, logger *logrus.Logger, namespace stri
 // Receives golang context, name of the created object, and object that implements k8s runtime.Object interface
 // Returns error if something went wrong
 func (k *KubeClient) CreateCR(ctx context.Context, name string, obj runtime.Object) error {
+	defer k.metrics.EvaluateDurationForMethod("CreateCR")()
 	requestUUID := ctx.Value(base.RequestUUID)
 	if requestUUID == nil {
 		requestUUID = DefaultVolumeID
@@ -91,7 +96,8 @@ func (k *KubeClient) CreateCR(ctx context.Context, name string, obj runtime.Obje
 			ll.Infof("CR %s %s already exist", crKind, name)
 			return nil
 		}
-		ll.Errorf("Failed to create CR %s %s", crKind, name)
+		ll.Errorf("Unable to create CR %s %s: %v", crKind, name, err)
+		return err
 	}
 	ll.Infof("CR %s %s created", crKind, name)
 	return nil
@@ -100,21 +106,27 @@ func (k *KubeClient) CreateCR(ctx context.Context, name string, obj runtime.Obje
 // ReadCR reads specified resource from k8s cluster into a pointer of struct that implements runtime.Object
 // Receives golang context, name of the read object, and object pointer where to read
 // Returns error if something went wrong
-func (k *KubeClient) ReadCR(ctx context.Context, name string, obj runtime.Object) error {
-	return k.Get(ctx, k8sCl.ObjectKey{Name: name, Namespace: k.Namespace}, obj)
+func (k *KubeClient) ReadCR(ctx context.Context, name string, namespace string, obj runtime.Object) error {
+	defer k.metrics.EvaluateDurationForMethod("ReadCR")()
+	if namespace == "" {
+		return k.Get(ctx, k8sCl.ObjectKey{Name: name, Namespace: k.Namespace}, obj)
+	}
+	return k.Get(ctx, k8sCl.ObjectKey{Name: name, Namespace: namespace}, obj)
 }
 
 // ReadList reads a list of specified resources into k8s resource List struct (for example v1.PodList)
 // Receives golang context, and List object pointer where to read
 // Returns error if something went wrong
 func (k *KubeClient) ReadList(ctx context.Context, obj runtime.Object) error {
-	return k.List(ctx, obj, k8sCl.InNamespace(k.Namespace))
+	defer k.metrics.EvaluateDurationForMethod("ReadList")()
+	return k.List(ctx, obj)
 }
 
 // UpdateCR updates provided resource on k8s cluster
 // Receives golang context and updated object that implements k8s runtime.Object interface
 // Returns error if something went wrong
 func (k *KubeClient) UpdateCR(ctx context.Context, obj runtime.Object) error {
+	defer k.metrics.EvaluateDurationForMethod("UpdateCR")()
 	requestUUID := ctx.Value(base.RequestUUID)
 	if requestUUID == nil {
 		requestUUID = DefaultVolumeID
@@ -132,6 +144,7 @@ func (k *KubeClient) UpdateCR(ctx context.Context, obj runtime.Object) error {
 // Receives golang context and removable object that implements k8s runtime.Object interface
 // Returns error if something went wrong
 func (k *KubeClient) DeleteCR(ctx context.Context, obj runtime.Object) error {
+	defer k.metrics.EvaluateDurationForMethod("DeleteCR")()
 	requestUUID := ctx.Value(base.RequestUUID)
 	if requestUUID == nil {
 		requestUUID = DefaultVolumeID
@@ -196,14 +209,15 @@ func (k *KubeClient) ConstructLVGCR(name string, apiLVG api.LogicalVolumeGroup) 
 // ConstructVolumeCR constructs Volume custom resource from api.Volume struct
 // Receives a name for k8s ObjectMeta and an instance of api.Volume struct
 // Returns an instance of Volume CR struct
-func (k *KubeClient) ConstructVolumeCR(name string, apiVolume api.Volume) *volumecrd.Volume {
+func (k *KubeClient) ConstructVolumeCR(name string, namespace string, apiVolume api.Volume) *volumecrd.Volume {
 	return &volumecrd.Volume{
 		TypeMeta: apisV1.TypeMeta{
 			Kind:       crdV1.VolumeKind,
 			APIVersion: crdV1.APIV1Version,
 		},
 		ObjectMeta: apisV1.ObjectMeta{
-			Name: name,
+			Name:      name,
+			Namespace: namespace,
 		},
 		Spec: apiVolume,
 	}
@@ -245,7 +259,7 @@ func (k *KubeClient) ConstructCSIBMNodeCR(name string, csiNode api.CSIBMNode) *n
 // with specified amount of attempts. Fails right away if resource is not found
 // Receives golang context, name of the read object, and object pointer where to read
 // Returns error if something went wrong
-func (k *KubeClient) ReadCRWithAttempts(name string, obj runtime.Object, attempts int) error {
+func (k *KubeClient) ReadCRWithAttempts(name string, namespace string, obj runtime.Object, attempts int) error {
 	ll := k.log.WithFields(logrus.Fields{
 		"method":   "ReadCRWithAttempts",
 		"volumeID": name,
@@ -260,7 +274,7 @@ func (k *KubeClient) ReadCRWithAttempts(name string, obj runtime.Object, attempt
 
 	// read volume into v
 	for i := 0; i < attempts; i++ {
-		if err = k.ReadCR(context.Background(), name, obj); err == nil {
+		if err = k.ReadCR(context.Background(), name, namespace, obj); err == nil {
 			return nil
 		} else if k8sError.IsNotFound(err) {
 			return err
@@ -307,6 +321,7 @@ func (k *KubeClient) UpdateCRWithAttempts(ctx context.Context, obj runtime.Objec
 // Returns slice of coreV1.Pod or error if something went wrong
 // todo use labels instead of mask
 func (k *KubeClient) GetPods(ctx context.Context, mask string) ([]*coreV1.Pod, error) {
+	defer k.metrics.EvaluateDurationForMethod("GetPods")()
 	pods := coreV1.PodList{}
 
 	if err := k.List(ctx, &pods, k8sCl.InNamespace(k.Namespace)); err != nil {
@@ -326,6 +341,7 @@ func (k *KubeClient) GetPods(ctx context.Context, mask string) ([]*coreV1.Pod, e
 // Receives golang context
 // Returns slice of coreV1.Node or error if something went wrong
 func (k *KubeClient) GetNodes(ctx context.Context) ([]coreV1.Node, error) {
+	defer k.metrics.EvaluateDurationForMethod("GetNodes")()
 	nodes := coreV1.NodeList{}
 
 	if err := k.List(ctx, &nodes); err != nil {
@@ -339,6 +355,7 @@ func (k *KubeClient) GetNodes(ctx context.Context) ([]coreV1.Node, error) {
 // Receives golang context
 // Returns return slice of string - system drives uuids
 func (k *KubeClient) GetSystemDriveUUIDs() []string {
+	defer k.metrics.EvaluateDurationForMethod("GetSystemDriveUUIDs")()
 	ll := k.log.WithField("method", "GetSystemDriveUUIDs")
 	var driveList drivecrd.DriveList
 	if err := k.ReadList(context.Background(), &driveList); err != nil {

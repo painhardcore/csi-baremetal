@@ -8,7 +8,7 @@ lint:
 lint-charts:
 	helm lint ./${PLUGIN_CHART_PATH}
 	helm lint ./${EXTENDER_CHART_PATH}
-	helm lnt  ./${OPERATOR_CHART_PATH}
+	helm lint ./${OPERATOR_CHART_PATH}
 
 ### Unit tests
 
@@ -46,12 +46,7 @@ test-sanity:
 	should fail when requesting to create a volume with already existing name and different capacity|\
 	should not fail when requesting to create a volume with already existing name and same capacity" -ginkgo.v -timeout=0
 
-kind-pull-images:
-	docker pull ${REGISTRY}/${CSI_PROVISIONER}:${CSI_PROVISIONER_TAG}
-	docker pull ${REGISTRY}/${CSI_REGISTRAR}:${CSI_REGISTRAR_TAG}
-	docker pull ${REGISTRY}/${CSI_ATTACHER}:${CSI_ATTACHER_TAG}
-	docker pull ${REGISTRY}/${LIVENESS_PROBE}:${LIVENESS_PROBE_TAG}
-	docker pull ${BUSYBOX}:${BUSYBOX_TAG}
+kind-pull-images: kind-pull-sidecar-images
 	docker pull ${REGISTRY}/${PROJECT}-${LOOPBACK_DRIVE_MGR}:${TAG}
 	docker pull ${REGISTRY}/${PROJECT}-${NODE}:${TAG}
 	docker pull ${REGISTRY}/${PROJECT}-${CONTROLLER}:${TAG}
@@ -60,11 +55,21 @@ kind-pull-images:
 	docker pull ${REGISTRY}/${PROJECT}-${SCHEDULER}:${TAG}
 	docker pull ${REGISTRY}/${PROJECT}-${CSI_BM_NODE}:${TAG}
 
+kind-pull-sidecar-images:
+	docker pull ${REGISTRY}/${CSI_PROVISIONER}:${CSI_PROVISIONER_TAG}
+	docker pull ${REGISTRY}/${CSI_REGISTRAR}:${CSI_REGISTRAR_TAG}
+	docker pull ${REGISTRY}/${CSI_ATTACHER}:${CSI_ATTACHER_TAG}
+	docker pull ${REGISTRY}/${LIVENESS_PROBE}:${LIVENESS_PROBE_TAG}
+	docker pull ${REGISTRY}/${BUSYBOX}:${BUSYBOX_TAG}
+	docker pull ${REGISTRY}/library/nginx:1.14-alpine
+
 kind-tag-images:
 	docker tag ${REGISTRY}/${CSI_PROVISIONER}:${CSI_PROVISIONER_TAG} ${CSI_PROVISIONER}:${CSI_PROVISIONER_TAG}
 	docker tag ${REGISTRY}/${CSI_REGISTRAR}:${CSI_REGISTRAR_TAG} ${CSI_REGISTRAR}:${CSI_REGISTRAR_TAG}
 	docker tag ${REGISTRY}/${CSI_ATTACHER}:${CSI_ATTACHER_TAG} ${CSI_ATTACHER}:${CSI_ATTACHER_TAG}
 	docker tag ${REGISTRY}/${LIVENESS_PROBE}:${LIVENESS_PROBE_TAG} ${LIVENESS_PROBE}:${LIVENESS_PROBE_TAG}
+	docker tag ${REGISTRY}/${BUSYBOX}:${BUSYBOX_TAG} ${BUSYBOX}:${BUSYBOX_TAG}
+	docker tag ${REGISTRY}/library/nginx:1.14-alpine docker.io/library/nginx:1.14-alpine
 	docker tag ${REGISTRY}/${PROJECT}-${LOOPBACK_DRIVE_MGR}:${TAG} ${PROJECT}-${LOOPBACK_DRIVE_MGR}:${TAG}
 	docker tag ${REGISTRY}/${PROJECT}-${NODE}:${TAG} ${PROJECT}-${NODE}:${TAG}
 	docker tag ${REGISTRY}/${PROJECT}-${CONTROLLER}:${TAG} ${PROJECT}-${CONTROLLER}:${TAG}
@@ -78,10 +83,11 @@ kind-load-images:
 	kind load docker-image ${CSI_REGISTRAR}:${CSI_REGISTRAR_TAG}
 	kind load docker-image ${CSI_ATTACHER}:${CSI_ATTACHER_TAG}
 	kind load docker-image ${LIVENESS_PROBE}:${LIVENESS_PROBE_TAG}
+	kind load docker-image ${BUSYBOX}:${BUSYBOX_TAG}
+	kind load docker-image docker.io/library/nginx:1.14-alpine
 	kind load docker-image ${PROJECT}-${LOOPBACK_DRIVE_MGR}:${TAG}
 	kind load docker-image ${PROJECT}-${NODE}:${TAG}
 	kind load docker-image ${PROJECT}-${CONTROLLER}:${TAG}
-	kind load docker-image ${BUSYBOX}:${BUSYBOX_TAG}
 	kind load docker-image ${PROJECT}-${EXTENDER}:${TAG}
 	kind load docker-image ${PROJECT}-${EXTENDER_PATCHER}:${TAG}
 	kind load docker-image ${PROJECT}-${SCHEDULER}:${TAG}

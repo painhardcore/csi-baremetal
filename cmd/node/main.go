@@ -23,10 +23,14 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net"
+	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
+	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"gopkg.in/yaml.v2"
@@ -39,6 +43,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	api "github.com/dell/csi-baremetal/api/generated/v1"
+	"github.com/dell/csi-baremetal/api/v1/drivecrd"
 	"github.com/dell/csi-baremetal/api/v1/lvgcrd"
 	"github.com/dell/csi-baremetal/api/v1/volumecrd"
 	"github.com/dell/csi-baremetal/pkg/base"
@@ -47,8 +52,10 @@ import (
 	"github.com/dell/csi-baremetal/pkg/base/rpc"
 	"github.com/dell/csi-baremetal/pkg/base/util"
 	csibmnodeconst "github.com/dell/csi-baremetal/pkg/crcontrollers/csibmnode/common"
+	"github.com/dell/csi-baremetal/pkg/crcontrollers/drive"
 	"github.com/dell/csi-baremetal/pkg/crcontrollers/lvg"
 	"github.com/dell/csi-baremetal/pkg/events"
+	"github.com/dell/csi-baremetal/pkg/metrics"
 	"github.com/dell/csi-baremetal/pkg/node"
 )
 
@@ -70,6 +77,9 @@ var (
 		"Whether node svc should read id from node annotation and use it as id for all CRs or not")
 	logLevel = flag.String("loglevel", base.InfoLevel,
 		fmt.Sprintf("Log level, support values are %s, %s, %s", base.InfoLevel, base.DebugLevel, base.TraceLevel))
+	metricsAddress = flag.String("metrics-address", "", "The TCP network address where the prometheus metrics endpoint will run"+
+		"(example: :8080 which corresponds to port 8080 on local host). The default is empty string, which means metrics endpoint is disabled.")
+	metricspath = flag.String("metrics-path", "/metrics", "The HTTP path where prometheus metrics will be exposed. Default is /metrics.")
 )
 
 func main() {
@@ -79,6 +89,11 @@ func main() {
 	featureConf.Update(featureconfig.FeatureACReservation, *useACRs)
 	featureConf.Update(featureconfig.FeatureNodeIDFromAnnotation, *useNodeAnnotation)
 
+	var enableMetrics bool
+	if *metricspath != "" {
+		enableMetrics = true
+	}
+
 	logger, err := base.InitLogger(*logPath, *logLevel)
 	if err != nil {
 		logger.Warnf("Can't set logger's output to %s. Using stdout instead.\n", *logPath)
@@ -87,14 +102,14 @@ func main() {
 	logger.Info("Starting Node Service")
 
 	// gRPC client for communication with DriveMgr via TCP socket
-	gRPCClient, err := rpc.NewClient(nil, *driveMgrEndpoint, logger)
+	gRPCClient, err := rpc.NewClient(nil, *driveMgrEndpoint, enableMetrics, logger)
 	if err != nil {
 		logger.Fatalf("fail to create grpc client for endpoint %s, error: %v", *driveMgrEndpoint, err)
 	}
 	clientToDriveMgr := api.NewDriveServiceClient(gRPCClient.GRPCClient)
 
 	// gRPC server that will serve requests (node CSI) from k8s via unix socket
-	csiUDSServer := rpc.NewServerRunner(nil, *csiEndpoint, logger)
+	csiUDSServer := rpc.NewServerRunner(nil, *csiEndpoint, enableMetrics, logger)
 
 	k8SClient, err := k8s.GetK8SClient()
 	if err != nil {
@@ -113,22 +128,38 @@ func main() {
 	// Wait till all events are sent/handled
 	defer eventRecorder.Wait()
 
-	k8sClientForVolume := k8s.NewKubeClient(k8SClient, logger, *namespace)
-	k8sClientForLVG := k8s.NewKubeClient(k8SClient, logger, *namespace)
+	// TODO why do we need 3 clients?
+	volumesClient := k8s.NewKubeClient(k8SClient, logger, *namespace)
+	lvgClient := k8s.NewKubeClient(k8SClient, logger, *namespace)
+	drivesClient := k8s.NewKubeClient(k8SClient, logger, *namespace)
 	csiNodeService := node.NewCSINodeService(
-		clientToDriveMgr, nodeID, logger, k8sClientForVolume, eventRecorder, featureConf)
+		clientToDriveMgr, nodeID, logger, volumesClient, eventRecorder, featureConf)
 
 	mgr := prepareCRDControllerManagers(
 		csiNodeService,
-		lvg.NewController(k8sClientForLVG, nodeID, logger),
+		lvg.NewController(lvgClient, nodeID, logger),
+		drive.NewController(drivesClient, nodeID, clientToDriveMgr, eventRecorder, logger),
 		logger)
 
 	// register CSI calls handler
 	csi.RegisterNodeServer(csiUDSServer.GRPCServer, csiNodeService)
 	csi.RegisterIdentityServer(csiUDSServer.GRPCServer, csiNodeService)
+
 	handler := util.NewSignalHandler(logger)
 	go handler.SetupSIGTERMHandler(csiUDSServer)
+	if enableMetrics {
+		grpc_prometheus.Register(csiUDSServer.GRPCServer)
+		grpc_prometheus.EnableHandlingTimeHistogram()
+		grpc_prometheus.EnableClientHandlingTimeHistogram()
+		prometheus.MustRegister(metrics.BuildInfo)
 
+		go func() {
+			http.Handle(*metricspath, promhttp.Handler())
+			if err := http.ListenAndServe(*metricsAddress, nil); err != nil {
+				logger.Warnf("metric http returned: %s ", err)
+			}
+		}()
+	}
 	go func() {
 		logger.Info("Starting Node Health server ...")
 		if err := util.SetupAndStartHealthCheckServer(
@@ -165,7 +196,7 @@ func Discovering(c *node.CSINodeService, logger *logrus.Logger) {
 			logger.Errorf("Discover finished with error: %v", err)
 		} else {
 			checker.OK()
-			logger.Info("Discover finished successful")
+			logger.Tracef("Discover finished successful")
 			// Increase wait time, because we don't need to call API often after node initialization
 			discoveringWaitTime = 30 * time.Second
 		}
@@ -174,7 +205,7 @@ func Discovering(c *node.CSINodeService, logger *logrus.Logger) {
 
 // prepareCRDControllerManagers prepares CRD ControllerManagers to work with CSI custom resources
 func prepareCRDControllerManagers(volumeCtrl *node.CSINodeService, lvgCtrl *lvg.Controller,
-	logger *logrus.Logger) manager.Manager {
+	driveCtrl *drive.Controller, logger *logrus.Logger) manager.Manager {
 	var (
 		ll     = logger.WithField("method", "prepareCRDControllerManagers")
 		scheme = runtime.NewScheme()
@@ -193,9 +224,13 @@ func prepareCRDControllerManagers(volumeCtrl *node.CSINodeService, lvgCtrl *lvg.
 		logrus.Fatal(err)
 	}
 
+	// register Drive crd
+	if err = drivecrd.AddToSchemeDrive(scheme); err != nil {
+		logrus.Fatal(err)
+	}
+
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme:    scheme,
-		Namespace: *namespace,
+		Scheme: scheme,
 	})
 	if err != nil {
 		ll.Fatalf("Unable to create new CRD Controller Manager: %v", err)
@@ -208,6 +243,10 @@ func prepareCRDControllerManagers(volumeCtrl *node.CSINodeService, lvgCtrl *lvg.
 
 	// bind LVMController to K8s Controller Manager as a controller for LVG CR
 	if err = lvgCtrl.SetupWithManager(mgr); err != nil {
+		logger.Fatalf("unable to create controller for LVG: %v", err)
+	}
+
+	if err = driveCtrl.SetupWithManager(mgr); err != nil {
 		logger.Fatalf("unable to create controller for LVG: %v", err)
 	}
 
