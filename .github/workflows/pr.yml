@@ -20,7 +20,7 @@ jobs:
       
         
     - name: install all required deps
-      run: wget -P /tmp https://golang.org/dl/go1.15.3.linux-amd64.tar.gz && \
+      run: wget -P /tmp https://golang.org/dl/go1.15.3.linux-amd64.tar.gz \
         tar -C /usr/local -xzf /tmp/go1.15.3.linux-amd64.tar.gz && \
         rm /tmp/go1.15.3.linux-amd64.tar.gz && \
         wget -O golangci-lint.deb https://github.com/golangci/golangci-lint/releases/download/v1.32.1/golangci-lint-1.32.1-linux-amd64.deb && \
