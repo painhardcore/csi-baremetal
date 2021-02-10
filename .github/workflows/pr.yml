@@ -26,7 +26,7 @@ jobs:
         rm /tmp/go1.15.2.linux-amd64.tar.gz
         echo "/usr/local/go/bin" >> $GITHUB_PATH
         echo "GOPATH=/usr/share/go" >> $GITHUB_ENV
-        echo "GOROOT=/usr/local/go" >> $GITHUB_ENV
+        echo "GOROOT=/usr/local/go/bin" >> $GITHUB_ENV
       
     - name: install golangci-lint
       run: wget -O golangci-lint.deb https://github.com/golangci/golangci-lint/releases/download/v1.32.1/golangci-lint-1.32.1-linux-amd64.deb && sudo dpkg -i golangci-lint.deb
