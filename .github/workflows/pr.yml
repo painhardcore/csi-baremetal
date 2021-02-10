@@ -24,6 +24,7 @@ jobs:
         rm /tmp/go1.15.2.linux-amd64.tar.gz
         sed -i '1i/usr/local/go/bin' $GITHUB_PATH
         echo $GITHUB_PATH
+        cat $GITHUB_PATH
         echo "GOPATH=/usr/share/go" >> $GITHUB_ENV
         echo "GOROOT=/usr/local/go" >> $GITHUB_ENV
         echo $PATH
