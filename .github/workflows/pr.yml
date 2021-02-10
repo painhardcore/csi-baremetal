@@ -18,12 +18,10 @@ jobs:
     - name: install all required deps
       run:  sudo curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
       
-        
     - name: install all required deps
-      run: wget -P /tmp https://golang.org/dl/go1.15.3.linux-amd64.tar.gz && \
-        sudo tar -C /usr/local -xzf /tmp/go1.15.3.linux-amd64.tar.gz && \
-        rm /tmp/go1.15.3.linux-amd64.tar.gz && \
-        wget -O golangci-lint.deb https://github.com/golangci/golangci-lint/releases/download/v1.32.1/golangci-lint-1.32.1-linux-amd64.deb && \
+      run: wget -P /tmp https://golang.org/dl/go1.15.3.linux-amd64.tar.gz && sudo tar -C /usr/local -xzf /tmp/go1.15.3.linux-amd64.tar.gz &&  rm /tmp/go1.15.3.linux-amd64.tar.gz 
+    - name: install all required deps
+      run: wget -O golangci-lint.deb https://github.com/golangci/golangci-lint/releases/download/v1.32.1/golangci-lint-1.32.1-linux-amd64.deb && \
         sudo dpkg -i golangci-lint.deb && \
         mkdir -p proto_3.11.0 && \
         curl -L -O https://github.com/protocolbuffers/protobuf/releases/download/v3.11.0/protoc-3.11.0-linux-x86_64.zip && \
