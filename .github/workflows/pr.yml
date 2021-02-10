@@ -21,7 +21,7 @@ jobs:
       
     - name: install go
       run: |
-        wget -q /tmp https://golang.org/dl/go1.15.2.linux-amd64.tar.gz 
+        wget -P /tmp -q https://golang.org/dl/go1.15.2.linux-amd64.tar.gz 
         sudo tar -C /usr/local -xzf /tmp/go1.15.2.linux-amd64.tar.gz 
         rm /tmp/go1.15.2.linux-amd64.tar.gz
         echo "/usr/local/go/bin" >> $GITHUB_PATH
