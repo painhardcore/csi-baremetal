@@ -26,6 +26,8 @@ jobs:
         echo "GOPATH=/usr/share/go" >> $GITHUB_ENV
         echo "GOROOT=/usr/local/go" >> $GITHUB_ENV
         echo $PATH
+        which go
+        whereis go
         go version
         go env
         echo $GITHUB_ENV
