@@ -17,7 +17,7 @@ jobs:
         
     - name: install all required deps
       run:  curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add - && \
-        echo "deb https://apt.kubernetes.io/ kubernetes-xenial main" | tee -a /etc/apt/sources.list.d/kubernetes.list && \
+        echo "deb https://apt.kubernetes.io/ kubernetes-xenial main" | sudo tee -a /etc/apt/sources.list.d/kubernetes.list && \
         sudo apt-get update && \
         sudo apt-get install -y kubectl && \
         wget -P /tmp https://golang.org/dl/go1.15.3.linux-amd64.tar.gz && \
