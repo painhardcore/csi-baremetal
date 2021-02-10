@@ -25,13 +25,14 @@ jobs:
       run: wget -O golangci-lint.deb https://github.com/golangci/golangci-lint/releases/download/v1.32.1/golangci-lint-1.32.1-linux-amd64.deb && sudo dpkg -i golangci-lint.deb
     
     - name: install proto
-      run: sudo mkdir -p proto_3.11.0 && \
-        sudo curl -L -O https://github.com/protocolbuffers/protobuf/releases/download/v3.11.0/protoc-3.11.0-linux-x86_64.zip && \
-        sudo unzip protoc-3.11.0-linux-x86_64.zip -d proto_3.11.0/ && \
-        sudo mv proto_3.11.0/bin/protoc /usr/bin/protoc && \
-        protoc --version && \
-        sudo rm -rf  proto_3.11.0 && \
-        sudo rm protoc-*
+      run: |
+        mkdir -p proto_3.11.0
+        curl -L -O https://github.com/protocolbuffers/protobuf/releases/download/v3.11.0/protoc-3.11.0-linux-x86_64.zip
+        unzip protoc-3.11.0-linux-x86_64.zip -d proto_3.11.0/
+        sudo mv proto_3.11.0/bin/protoc /usr/bin/protoc
+        protoc --version
+        rm -rf  proto_3.11.0
+        rm protoc-*
 
     - name: install all the rest required deps
       run: go get github.com/golang/protobuf/protoc-gen-go@v1.3 && \
