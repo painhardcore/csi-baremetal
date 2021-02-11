@@ -54,7 +54,7 @@ jobs:
       uses: actions/setup-go@v2
       with:
        go-version: '^1.15.3'
-       run: |
+      run: |
         go get github.com/golang/protobuf/protoc-gen-go@v1.3
         go get sigs.k8s.io/controller-tools/cmd/controller-gen@v0.2.2 
   
