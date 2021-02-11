@@ -63,9 +63,9 @@ jobs:
 
     - name: test sanity
       run: |
-        helm install --wait baremetal-csi-plugin ./charts/baremetal-csi-plugin
-        helm install --wait scheduler-extender ./charts/scheduler-extender
-        helm install --wait csibm-operator ./charts/csibm-operator
+        helm install baremetal-csi-plugin ./charts/baremetal-csi-plugin
+        helm install scheduler-extender ./charts/scheduler-extender
+        helm install csibm-operator ./charts/csibm-operator
         make test-sanity
         
         
