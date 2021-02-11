@@ -11,6 +11,16 @@ jobs:
     - name: Check out code into the Go module directory
       uses: actions/checkout@v2
       
+    - uses: helm/kind-action@v1.1.0
+      with:
+          config: "test/kind/kind.yaml" 
+    - name: Testing
+      run: |
+          kubectl cluster-info
+          kubectl get pods -n kube-system
+          echo "current-context:" $(kubectl config current-context)
+          echo "environment-kubeconfig:" ${KUBECONFIG}
+          
     - name: Prepare Golang 
       uses: actions/setup-go@v2
       with:
@@ -36,15 +46,6 @@ jobs:
       run: |
         GOGC=300 make lint
         make lint-charts
-    - uses: engineerd/setup-kind@v0.7.0
-      with:
-          config: "test/kind/kind.yaml" 
-    - name: Testing
-      run: |
-          kubectl cluster-info
-          kubectl get pods -n kube-system
-          echo "current-context:" $(kubectl config current-context)
-          echo "environment-kubeconfig:" ${KUBECONFIG}
           
     - name: test
       run: CI=false make test
