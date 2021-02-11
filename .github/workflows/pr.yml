@@ -34,9 +34,18 @@ jobs:
 
     - name: Lint
       run: |
-        GOGC=200 make lint
+        GOGC=300 make lint
         make lint-charts
-
+    - uses: engineerd/setup-kind@v0.7.0
+      with:
+          config: "test/kind/kind.yaml" 
+    - name: Testing
+      run: |
+          kubectl cluster-info
+          kubectl get pods -n kube-system
+          echo "current-context:" $(kubectl config current-context)
+          echo "environment-kubeconfig:" ${KUBECONFIG}
+          
     - name: test
       run: CI=false make test
 
