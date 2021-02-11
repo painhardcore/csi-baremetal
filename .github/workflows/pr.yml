@@ -36,7 +36,7 @@ jobs:
       
     - name: install golangci-lint
       run: |
-        echo "GOBIN=(go env GOPATH)/bin" >> $GITHUB_ENV
+        echo "GOBIN=$GOPATH/bin" >> $GITHUB_ENV
         wget -O golangci-lint.deb https://github.com/golangci/golangci-lint/releases/download/v1.32.1/golangci-lint-1.32.1-linux-amd64.deb
         sudo dpkg -i golangci-lint.deb
     
