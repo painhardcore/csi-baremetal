@@ -34,7 +34,7 @@ jobs:
 
     - name: Lint
       run: |
-        make lint
+        GOGC=200 make lint
         make lint-charts
 
     - name: test
