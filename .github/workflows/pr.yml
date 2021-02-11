@@ -33,7 +33,9 @@ jobs:
       run:  make dependency
 
     - name: Lint
-      run: GOGC=300 make lint
+      run: |
+        make lint
+        make lint-charts
 
     - name: test
       run: CI=false make test
