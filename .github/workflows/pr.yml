@@ -47,7 +47,7 @@ jobs:
       run: make lint-charts
       
     - name: test
-      run: make test
+      run: CI=false make test
       
     - name: Coverage
       run: make coverage
