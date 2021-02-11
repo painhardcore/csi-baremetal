@@ -12,8 +12,6 @@ jobs:
       uses: actions/checkout@v2
       
     - uses: helm/kind-action@v1.1.0
-      with:
-          config: "test/kind/kind.yaml" 
     - name: Testing
       run: |
           kubectl cluster-info
@@ -49,6 +47,9 @@ jobs:
           
     - name: test
       run: CI=false make test
+
+    - name: test
+      run: make test-sanity
 
     - name: Build
       run: make build
