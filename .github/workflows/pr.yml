@@ -18,8 +18,8 @@ jobs:
     - uses: actions/cache@v2
       with:
         path: |
-          ~/${GOPATH}/pkg/mod
-          ~/.cache/go-build
+          ${GOCACHE}
+          ${GOMODCACHE}
         key: csi-go-${{ hashFiles('**/go.sum') }}
         restore-keys: |
           csi-go-
