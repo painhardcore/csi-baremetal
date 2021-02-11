@@ -14,7 +14,7 @@ jobs:
     - name: Setup Go
       uses: actions/setup-go@v2
       with:
-       go-version: ‘1.15.3’
+       go-version: ‘1.15’
 
     - name: install all required deps
       run:  sudo apt-get update && sudo apt-get install -y wget git gcc tar lvm2 curl unzip make apt-transport-https gnupg2 curl apt-utils
