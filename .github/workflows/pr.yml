@@ -19,8 +19,9 @@ jobs:
       uses: actions/cache@v2
       with:
         path: |
-          ${GOCACHE}
-          ${GOMODCACHE}
+          ~/go/pkg/mod
+          ~/.cache/go-build
+          ~/.cache/golangci-lint
         key: csi-go-${{ hashFiles('**/go.sum') }}
         restore-keys: |
           csi-go-
@@ -47,26 +48,32 @@ jobs:
     - name: Lint charts
       run: make lint-charts
       
-    - name: test
+    - name: Run Tests
       run: CI=false make test
       
     - name: Coverage
       run: make coverage
       
-    - name: Build
+    - name: Build binaries
       run: |
         make DRIVE_MANAGER_TYPE=basemgr build
         make DRIVE_MANAGER_TYPE=loopbackmgr build-drivemgr
         make DRIVE_MANAGER_TYPE=idracmgr build-drivemgr
         
     - uses: helm/kind-action@v1.1.0
-
-    - name: test sanity
+    - name: Get kind cluster information
+      run: |
+          kubectl cluster-info
+          kubectl get pods --all-namespaces
+          echo "current-context:" $(kubectl config current-context)
+          echo "environment-kubeconfig:" ${KUBECONFIG}
+    - name: Test sanity
       run: |
         helm install baremetal-csi-plugin ./charts/baremetal-csi-plugin
         helm install scheduler-extender ./charts/scheduler-extender
         helm install csibm-operator ./charts/csibm-operator
         make test-sanity
+        kubectl get pods --all-namespaces
         
         
 
