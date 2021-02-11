@@ -10,14 +10,6 @@ jobs:
     steps:
     - name: Check out code into the Go module directory
       uses: actions/checkout@v2
-      
-    - uses: helm/kind-action@v1.1.0
-    - name: Testing
-      run: |
-          kubectl cluster-info
-          kubectl get pods -n kube-system
-          echo "current-context:" $(kubectl config current-context)
-          echo "environment-kubeconfig:" ${KUBECONFIG}
           
     - name: Prepare Golang 
       uses: actions/setup-go@v2
@@ -55,6 +47,19 @@ jobs:
       run: make lint-charts
     - name: test
       run: CI=false make test
+    - name: Build
+      run: |
+        make DRIVE_MANAGER_TYPE=basemgr build
+        make DRIVE_MANAGER_TYPE=loopbackmgr build-drivemgr
+        make DRIVE_MANAGER_TYPE=idracmgr build-drivemgr
+        
+    - uses: helm/kind-action@v1.1.0
+    - name: Testing
+      run: |
+          kubectl cluster-info
+          kubectl get pods -n kube-system
+          echo "current-context:" $(kubectl config current-context)
+          echo "environment-kubeconfig:" ${KUBECONFIG}
 
     - name: test sanity
       run: |
@@ -64,8 +69,4 @@ jobs:
         make test-sanity
         
         
-    - name: Build
-      run: |
-        make DRIVE_MANAGER_TYPE=basemgr build
-        make DRIVE_MANAGER_TYPE=loopbackmgr build-drivemgr
-        make DRIVE_MANAGER_TYPE=idracmgr build-drivemgr
+
