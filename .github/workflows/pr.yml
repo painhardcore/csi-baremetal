@@ -3,7 +3,6 @@ name: Validate commit
 on: [push, pull_request]
 
 jobs:
-
   build:
     name: Build && test
     runs-on: ubuntu-18.04
@@ -43,10 +42,16 @@ jobs:
 
     - name: Lint code
       run: GOGC=300 make lint
+      
     - name: Lint charts
       run: make lint-charts
+      
     - name: test
-      run: CI=false make test
+      run: make test
+      
+    - name: Coverage
+      run: make coverage
+      
     - name: Build
       run: |
         make DRIVE_MANAGER_TYPE=basemgr build
@@ -54,12 +59,6 @@ jobs:
         make DRIVE_MANAGER_TYPE=idracmgr build-drivemgr
         
     - uses: helm/kind-action@v1.1.0
-    - name: Testing
-      run: |
-          kubectl cluster-info
-          kubectl get pods -n kube-system
-          echo "current-context:" $(kubectl config current-context)
-          echo "environment-kubeconfig:" ${KUBECONFIG}
 
     - name: test sanity
       run: |
