@@ -48,8 +48,13 @@ jobs:
     - name: test
       run: CI=false make test
 
-    - name: test
-      run: make test-sanity
-
+    - name: test sanity
+      run: |
+        helm install baremetal-csi-plugin ./charts/baremetal-csi-plugin
+        helm install scheduler-extender ./charts/scheduler-extender
+        helm install csibm-operator ./charts/csibm-operator
+        make test-sanity
+        
+        
     - name: Build
       run: make build
