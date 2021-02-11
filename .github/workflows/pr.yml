@@ -33,7 +33,7 @@ jobs:
       run:  make dependency
 
     - name: Lint
-      run: make lint
+      run: GOGC=300 make lint
 
     - name: test
       run: CI=false make test
