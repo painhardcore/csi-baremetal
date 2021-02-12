@@ -9,12 +9,7 @@ jobs:
     steps:
     - name: Check out code
       uses: actions/checkout@v2
-    
-    - uses: helm/kind-action@v1.1.0
-      with:
-        version: "v0.8.1"
-        wait: "1s"
-    
+
     - name: Prepare Golang 
       uses: actions/setup-go@v2
       with:
@@ -55,7 +50,12 @@ jobs:
       
     - name: Run Tests
       run: CI=false make test
-      
+    
+    - uses: helm/kind-action@v1.1.0
+      with:
+        version: "v0.8.1"
+        wait: "1s"
+    
     - name: Coverage
       run: make coverage
       
