@@ -59,6 +59,16 @@ import (
 	"github.com/dell/csi-baremetal/pkg/node"
 )
 
+func init() {
+	
+	
+	
+	 fmt.Println("YES")
+	 
+	
+}
+
+
 const (
 	componentName = "baremetal-csi-node"
 )
