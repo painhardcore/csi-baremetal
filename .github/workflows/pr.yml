@@ -24,6 +24,7 @@ jobs:
           ~/.cache/golangci-lint
         key: csi-go-${{ hashFiles('**/go.sum') }}
         restore-keys: |
+          csi-go-${{ hashFiles('**/go.sum') }}
           csi-go-
   
     - name: Compile proto files
@@ -50,11 +51,11 @@ jobs:
       
     - name: Run Tests
       run: CI=false make test
-    
+         
     - uses: helm/kind-action@v1.1.0
       with:
         version: "v0.8.1"
-        wait: "1s"
+        wait: "1s" # not wasting time here
     
     - name: Coverage
       run: make coverage
