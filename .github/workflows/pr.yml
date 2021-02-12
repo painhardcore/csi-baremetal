@@ -24,7 +24,6 @@ jobs:
           ~/.cache/golangci-lint
         key: csi-go-${{ hashFiles('**/go.sum') }}
         restore-keys: |
-          csi-go-${{ hashFiles('**/go.sum') }}
           csi-go-
   
     - name: Compile proto files
