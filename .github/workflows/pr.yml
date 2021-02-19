@@ -1,15 +1,13 @@
 name: PR validation
 
-on:
-  push:
-    branches: [ master ]
-  pull_request:
-    branches: [ master ]
-
+on: push
+env:
+  GO_version: '1.16.0'
 jobs:
   lint-test:
     name: Validate code and charts
     runs-on: ubuntu-18.04
+   
     steps:
     - name: Check out code
       uses: actions/checkout@v2
@@ -17,7 +15,7 @@ jobs:
     - name: Prepare Golang 
       uses: actions/setup-go@v2
       with:
-        go-version: '^1.16'
+        go-version: env.GO_version
 
     - name: Load cache
       uses: actions/cache@v2
@@ -26,9 +24,9 @@ jobs:
           ~/go/pkg/mod
           ~/.cache/go-build
           ~/.cache/golangci-lint
-        key: csi-go-${{ hashFiles('**/go.sum') }}
+        key: csi-env.GO_version-${{ hashFiles('**/go.sum') }}
         restore-keys: |
-          csi-go-
+          csi-env.GO_version-
         
     - name: Get dependencies
       run:  make dependency
