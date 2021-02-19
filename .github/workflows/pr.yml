@@ -23,10 +23,10 @@ jobs:
         path: |
           ~/go/pkg/mod
           ~/.cache/go-build
-        key: go-${{env.GO_version}}-${{ hashFiles('**/go.sum') }}
+        key: go2-${{env.GO_version}}-${{ hashFiles('**/go.sum') }}
         restore-keys: |
-          go-${{env.GO_version}}-
-          go-
+          go2-${{env.GO_version}}-
+          go2-
         
     - name: Get dependencies
       run:  make dependency
