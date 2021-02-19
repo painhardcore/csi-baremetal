@@ -5,13 +5,11 @@ on:
     branches: [ master ]
   pull_request:
     branches: [ master ]
-env:
-  GO_version: '1.16.0'
+
 jobs:
   lint-test:
     name: Validate code and charts
     runs-on: ubuntu-18.04
-   
     steps:
     - name: Check out code
       uses: actions/checkout@v2
@@ -19,7 +17,7 @@ jobs:
     - name: Prepare Golang 
       uses: actions/setup-go@v2
       with:
-        go-version: ${{env.GO_version}}
+        go-version: '^1.16'
 
     - name: Load cache
       uses: actions/cache@v2
@@ -28,11 +26,9 @@ jobs:
           ~/go/pkg/mod
           ~/.cache/go-build
           ~/.cache/golangci-lint
-        key: go-${{env.GO_version}}-${{ hashFiles('**/go.sum') }}-${{ github.ref }}
+        key: csi-go-${{ hashFiles('**/go.sum') }}
         restore-keys: |
-          go-${{env.GO_version}}-${{ hashFiles('**/go.sum') }}
-          go-${{env.GO_version}}-
-          go-
+          csi-go-
         
     - name: Get dependencies
       run:  make dependency
