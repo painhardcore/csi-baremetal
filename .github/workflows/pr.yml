@@ -32,7 +32,7 @@ jobs:
     - name: Get dependencies
       run:  make dependency
       
-    - uses: golangci/golangci-lint-action@v2
+    - uses: golangci/golangci-lint-action@v1.2.1
       with:
         version: v1.37.0
         skip-go-installation: true
