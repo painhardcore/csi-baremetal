@@ -24,9 +24,11 @@ jobs:
           ~/go/pkg/mod
           ~/.cache/go-build
           ~/.cache/golangci-lint
-        key: csi--${{env.GO_version}}-${{ hashFiles('**/go.sum') }}
+        key: go-${{env.GO_version}}-${{ hashFiles('**/go.sum') }}-${{ github.ref }}
         restore-keys: |
-          csi-${{env.GO_version}}-
+          go-${{env.GO_version}}-${{ hashFiles('**/go.sum') }}
+          go-${{env.GO_version}}-
+          go-
         
     - name: Get dependencies
       run:  make dependency
