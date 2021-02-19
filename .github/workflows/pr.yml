@@ -1,6 +1,10 @@
 name: PR validation
 
-on: push
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
 env:
   GO_version: '1.16.0'
 jobs:
