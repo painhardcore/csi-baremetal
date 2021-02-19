@@ -1,5 +1,5 @@
 name: PR validation
-
+# lol
 on: push
 env:
   GO_version: '1.16.0'
