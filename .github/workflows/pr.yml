@@ -1,10 +1,6 @@
 name: PR validation
 
-on:
-  push:
-    branches: [ master ]
-  pull_request:
-    branches: [ master ]
+on: push
 env:
   GO_version: '1.16.0'
 jobs:
@@ -27,8 +23,7 @@ jobs:
         path: |
           ~/go/pkg/mod
           ~/.cache/go-build
-          ~/.cache/golangci-lint
-        key: go-${{env.GO_version}}-${{ hashFiles('**/go.sum') }}-${{ github.ref }}
+        key: go-${{env.GO_version}}-${{ hashFiles('**/go.sum')}}-${{ github.sha }}
         restore-keys: |
           go-${{env.GO_version}}-${{ hashFiles('**/go.sum') }}
           go-${{env.GO_version}}-
@@ -37,13 +32,12 @@ jobs:
     - name: Get dependencies
       run:  make dependency
       
-    - name: Install golangci-lint
-      run: |
-        wget -O golangci-lint.deb https://github.com/golangci/golangci-lint/releases/download/v1.36.0/golangci-lint-1.36.0-linux-amd64.deb
-        sudo dpkg -i golangci-lint.deb
-        
-    - name: Lint code
-      run: GOGC=300 make lint
+    - uses: golangci/golangci-lint-action@v2
+      with:
+        version: v1.37.0
+        skip-go-installation: true
+        skip-pkg-cache: true
+        skip-build-cache: true
       
     - name: Lint charts
       run: make lint-charts
