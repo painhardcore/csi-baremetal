@@ -23,21 +23,23 @@ jobs:
         path: |
           ~/go/pkg/mod
           ~/.cache/go-build
-        key: go-${{env.GO_version}}-${{ hashFiles('**/go.sum')}}-${{ github.sha }}
+          ~/.cache/golangci-lint
+        key: go-${{ env.GO_version }}-${{ hashFiles('**/go.sum') }}-${{ github.sha }}
         restore-keys: |
-          go-${{env.GO_version}}-${{ hashFiles('**/go.sum') }}
-          go-${{env.GO_version}}-
+          go-${{ env.GO_version }}-${{ hashFiles('**/go.sum') }}
+          go-${{ env.GO_version }}-
           go-
         
     - name: Get dependencies
       run:  make dependency
       
-    - uses: golangci/golangci-lint-action@v2
-      with:
-        version: v1.37.0
-        skip-go-installation: true
-        skip-pkg-cache: true
-        skip-build-cache: true
+    - name: Install golangci-lint
+      run: |
+        wget -O -q golangci-lint.deb https://github.com/golangci/golangci-lint/releases/download/v1.37.0/golangci-lint-1.37.0-linux-amd64.deb
+        sudo dpkg -i golangci-lint.deb
+        
+    - name: Lint code
+      run: GOGC=300 make lint
       
     - name: Lint charts
       run: make lint-charts
