@@ -2,7 +2,6 @@ name: PR validation
 
 on:
   push:
-    branches: [ master ]
   pull_request:
     branches: [ master ]
 env:
@@ -128,6 +127,7 @@ jobs:
 # try
   build:
     runs-on: ubuntu-18.04
+    if: "contains(github.event.head_commit.message, '[build]')"
     steps:
     - name: Check out code
       uses: actions/checkout@v2
