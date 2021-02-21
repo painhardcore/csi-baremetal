@@ -10,6 +10,7 @@ env:
   golangci_version: '1.37.0'
 jobs:
   lint-test:
+    if: "contains(github.event.head_commit.message, '[lint-test]')"
     name: Validate code and charts
     runs-on: ubuntu-18.04
     steps:
@@ -86,6 +87,7 @@ jobs:
         kubectl get pods --all-namespaces
         
   gen-files-validate:
+    if: "contains(github.event.head_commit.message, '[gen]')"
     name: Generated files should be consistent
     runs-on: ubuntu-18.04
     steps:
@@ -123,3 +125,48 @@ jobs:
       if: steps.changed_files.outputs.files_changed == 'true'
       run: |
         exit 1
+
+  build:
+    runs-on: ubuntu-18.04
+    if: "contains(github.event.head_commit.message, '[build]')"
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v2
+
+    - name: Load dep cache
+      uses: actions/cache@v2
+      with:
+        path: ~/go/pkg/mod
+        key: go-dep-${{ env.go_version }}-${{ hashFiles('**/go.sum') }}
+    
+    - name: Get dependencies
+      run:  make dependency
+    - name : Build binary
+      run: |
+        make build DRIVE_MANAGER_TYPE=loopbackmgr
+        make images DRIVE_MANAGER_TYPE=loopbackmgr
+        make kind-pull-sidecar-images
+
+    
+  e2e:
+    runs-on: ubuntu-18.04
+    if: "contains(github.event.head_commit.message, '[e2e]')"
+    steps:
+    - name: LVL2 install
+      run: |
+        apt-get update
+        apt-get install -y lvm2
+
+    - name: CUSTOM KIND
+      run: |
+        wget -O kind https://github.com/painhardcore/builder/releases/download/0.0.1-alpha/kind_v0.8.1
+        chmod +x kind
+        mv kind /usr/bin
+        kind create cluster --config test/kind/kind.yaml
+  
+    - name: Get kind cluster information
+      run: |
+          kubectl cluster-info
+          kubectl get pods --all-namespaces
+          echo "current-context:" $(kubectl config current-context)
+          echo "environment-kubeconfig:" ${KUBECONFIG}
