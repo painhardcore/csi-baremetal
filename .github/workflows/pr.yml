@@ -163,7 +163,7 @@ jobs:
     steps:
     - name: Check out code
       uses: actions/checkout@v2
-      
+
     - name: LVL2 install
       run: |
         sudo apt-get update
@@ -175,7 +175,10 @@ jobs:
         sudo chmod +x kind
         sudo mv kind /usr/bin
         kind create cluster --config test/kind/kind.yaml
-  
+    - name: Sleep for 30 seconds
+      uses: jakejarvis/wait-action@master
+      with:
+        time: '600s'
     - name: Get kind cluster information
       run: |
           kubectl cluster-info
