@@ -152,7 +152,7 @@ jobs:
     - name: Push images
       run: |
         docker login -u publisher -p ${{ secrets.GITHUB_TOKEN }}  docker.pkg.github.com
-        make DRIVE_MANAGER_TYPE=loopbackmgr push-drivemgr
+        make DRIVE_MANAGER_TYPE=loopbackmgr REGISTRY=docker.pkg.github.com/${GITHUB_REPOSITORY} push-drivemgr 
         
   e2e:
     runs-on: ubuntu-18.04
