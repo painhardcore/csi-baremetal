@@ -143,12 +143,13 @@ jobs:
 
     - name : Build binary
       run: |
+        make DRIVE_MANAGER_TYPE=basemgr build
         make build DRIVE_MANAGER_TYPE=loopbackmgr
         
     - name: Build images
       run: |
-        make DRIVE_MANAGER_REGISTRY=docker.pkg.github.com/${GITHUB_REPOSITORY} TYPE=basemgr images
-        make images DRIVE_MANAGER_TYPE=loopbackmgr REGISTRY=docker.pkg.github.com/${GITHUB_REPOSITORY}
+        make DRIVE_MANAGER_TYPE=loopbackmgr REGISTRY=docker.pkg.github.com/${GITHUB_REPOSITORY} images
+        make DRIVE_MANAGER_TYPE=basemgr REGISTRY=docker.pkg.github.com/${GITHUB_REPOSITORY} images
         docker images
     - name: Push images
       run: |
