@@ -143,8 +143,9 @@ jobs:
     - name : Build binary
       run: |
         make build DRIVE_MANAGER_TYPE=loopbackmgr
-        make images DRIVE_MANAGER_TYPE=loopbackmgr
+        make images DRIVE_MANAGER_TYPE=loopbackmgr REGISTRY=docker.pkg.github.com/${GITHUB_REPOSITORY}/
         make kind-pull-sidecar-images
+        docker images
 
     
   e2e:
