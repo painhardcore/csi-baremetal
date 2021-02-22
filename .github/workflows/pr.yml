@@ -144,8 +144,9 @@ jobs:
       run: |
         make build DRIVE_MANAGER_TYPE=loopbackmgr
         make images DRIVE_MANAGER_TYPE=loopbackmgr REGISTRY=docker.pkg.github.com/${GITHUB_REPOSITORY}
-        make kind-pull-sidecar-images
         docker images
+        docker login -u publisher -p ${{ secrets.GITHUB_TOKEN }}  docker.pkg.github.com
+        make DRIVE_MANAGER_TYPE=loopbackmgr push-drivemgr
 
     
   e2e:
