@@ -163,14 +163,14 @@ jobs:
     steps:
     - name: LVL2 install
       run: |
-        apt-get update
-        apt-get install -y lvm2
+        sudo apt-get update
+        sudo apt-get install -y lvm2
 
     - name: CUSTOM KIND
       run: |
         wget -O kind https://github.com/painhardcore/builder/releases/download/0.0.1-alpha/kind_v0.8.1
-        chmod +x kind
-        mv kind /usr/bin
+        sudo chmod +x kind
+        sudo mv kind /usr/bin
         kind create cluster --config test/kind/kind.yaml
   
     - name: Get kind cluster information
