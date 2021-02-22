@@ -161,6 +161,9 @@ jobs:
     runs-on: ubuntu-18.04
     if: "contains(github.event.head_commit.message, '[e2e]')"
     steps:
+    - name: Check out code
+      uses: actions/checkout@v2
+      
     - name: LVL2 install
       run: |
         sudo apt-get update
