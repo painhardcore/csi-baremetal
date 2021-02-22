@@ -156,7 +156,7 @@ jobs:
         docker login -u publisher -p ${{ secrets.GITHUB_TOKEN }}  docker.pkg.github.com
         make DRIVE_MANAGER_TYPE=loopbackmgr REGISTRY=docker.pkg.github.com/${GITHUB_REPOSITORY} push-drivemgr 
         make DRIVE_MANAGER_TYPE=basemgr REGISTRY=docker.pkg.github.com/${GITHUB_REPOSITORY} push
-        
+  # lol
   e2e:
     runs-on: ubuntu-18.04
     if: "contains(github.event.head_commit.message, '[e2e]')"
