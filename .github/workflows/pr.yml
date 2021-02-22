@@ -140,15 +140,20 @@ jobs:
     
     - name: Get dependencies
       run:  make dependency
+
     - name : Build binary
       run: |
         make build DRIVE_MANAGER_TYPE=loopbackmgr
+        
+    - name: Build images
+      run: |
         make images DRIVE_MANAGER_TYPE=loopbackmgr REGISTRY=docker.pkg.github.com/${GITHUB_REPOSITORY}
         docker images
+    - name: Push images
+      run: |
         docker login -u publisher -p ${{ secrets.GITHUB_TOKEN }}  docker.pkg.github.com
         make DRIVE_MANAGER_TYPE=loopbackmgr push-drivemgr
-
-    
+        
   e2e:
     runs-on: ubuntu-18.04
     if: "contains(github.event.head_commit.message, '[e2e]')"
