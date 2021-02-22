@@ -36,30 +36,30 @@ base-image-controller: download-grpc-health-probe
 
 image-drivemgr: base-image-drivemgr
 	cp ./pkg/${DRIVE_MANAGER}/${DRIVE_MANAGER_TYPE}/Dockerfile ./build/${DRIVE_MANAGER}/${DRIVE_MANAGER_TYPE}/
-	docker build --network host --force-rm --tag ${REGISTRY}/${PROJECT}-${DRIVE_MANAGER_TYPE}:${TAG} ./build/${DRIVE_MANAGER}/${DRIVE_MANAGER_TYPE}
+	docker build --network host --force-rm --tag ${PROJECT}-${DRIVE_MANAGER_TYPE}:${TAG} ./build/${DRIVE_MANAGER}/${DRIVE_MANAGER_TYPE}
 
 image-node: base-image-node
 	cp ./pkg/${NODE}/Dockerfile ./build/${NODE}/
-	docker build --network host --force-rm --tag ${REGISTRY}/${PROJECT}-${NODE}:${TAG} ./build/${NODE}
+	docker build --network host --force-rm --tag ${PROJECT}-${NODE}:${TAG} ./build/${NODE}
 
 image-controller: base-image-controller
 	cp ./pkg/${CONTROLLER}/Dockerfile ./build/${CONTROLLER}/
-	docker build --network host --force-rm --tag ${REGISTRY}/${PROJECT}-${CONTROLLER}:${TAG} ./build/${CONTROLLER}
+	docker build --network host --force-rm --tag ${PROJECT}-${CONTROLLER}:${TAG} ./build/${CONTROLLER}
 
 image-extender:
 	cp ./pkg/${SCHEDULER}/${EXTENDER}/Dockerfile ./build/${SCHEDULING_PKG}/${EXTENDER}/
-	docker build --network host --force-rm --tag ${REGISTRY}/${PROJECT}-${EXTENDER}:${TAG} ./build/${SCHEDULING_PKG}/${EXTENDER}
+	docker build --network host --force-rm --tag ${PROJECT}-${EXTENDER}:${TAG} ./build/${SCHEDULING_PKG}/${EXTENDER}
 
 image-extender-patcher:
-	docker build --network host --force-rm --tag ${REGISTRY}/${PROJECT}-${EXTENDER_PATCHER}:${TAG} ./pkg/${SCHEDULER_EXTENDER_PATCHER_PKG}
+	docker build --network host --force-rm --tag ${PROJECT}-${EXTENDER_PATCHER}:${TAG} ./pkg/${SCHEDULER_EXTENDER_PATCHER_PKG}
 
 image-scheduler:
 	cp ./pkg/${SCHEDULER}/${PLUGIN}/Dockerfile ./build/${SCHEDULING_PKG}/${SCHEDULER}/
-	docker build --network host --force-rm --tag ${REGISTRY}/${PROJECT}-${SCHEDULER}:${TAG} ./build/${SCHEDULING_PKG}/${SCHEDULER}
+	docker build --network host --force-rm --tag ${PROJECT}-${SCHEDULER}:${TAG} ./build/${SCHEDULING_PKG}/${SCHEDULER}
 
 image-node-controller:
 	cp ./pkg/${CR_CONTROLLERS}/${CSI_BM_NODE}/Dockerfile ./build/${CR_CONTROLLERS}/${CSI_BM_NODE}/
-	docker build --network host --force-rm --tag ${REGISTRY}/${PROJECT}-${CSI_BM_NODE}:${TAG} \
+	docker build --network host --force-rm --tag ${PROJECT}-${CSI_BM_NODE}:${TAG} \
 	./build/${CR_CONTROLLERS}/${CSI_BM_NODE}
 
 ###################
@@ -74,25 +74,25 @@ push-scheduler \
 push-node-controller
 
 push-drivemgr:
-	docker push ${REGISTRY}/${PROJECT}-${DRIVE_MANAGER_TYPE}:${TAG}
+	docker push ${PROJECT}-${DRIVE_MANAGER_TYPE}:${TAG}
 
 push-node:
-	docker push ${REGISTRY}/${PROJECT}-${NODE}:${TAG}
+	docker push ${PROJECT}-${NODE}:${TAG}
 
 push-controller:
-	docker push ${REGISTRY}/${PROJECT}-${CONTROLLER}:${TAG}
+	docker push ${PROJECT}-${CONTROLLER}:${TAG}
 
 push-extender:
-	docker push ${REGISTRY}/${PROJECT}-${EXTENDER}:${TAG}
+	docker push ${PROJECT}-${EXTENDER}:${TAG}
 
 push-extender-patcher:
-	docker push ${REGISTRY}/${PROJECT}-${EXTENDER_PATCHER}:${TAG}
+	docker push ${PROJECT}-${EXTENDER_PATCHER}:${TAG}
 
 push-scheduler:
-	docker push ${REGISTRY}/${PROJECT}-${SCHEDULER}:${TAG}
+	docker push ${PROJECT}-${SCHEDULER}:${TAG}
 
 push-node-controller:
-	docker push ${REGISTRY}/${PROJECT}-${CSI_BM_NODE}:${TAG}
+	docker push ${PROJECT}-${CSI_BM_NODE}:${TAG}
 
 ####################
 ### Clean images ###
@@ -106,22 +106,22 @@ clean-image-scheduler \
 clean-image-node-controller
 
 clean-image-drivemgr:
-	docker rmi ${REGISTRY}/${PROJECT}-${DRIVE_MANAGER_TYPE}:${TAG}
+	docker rmi ${PROJECT}-${DRIVE_MANAGER_TYPE}:${TAG}
 
 clean-image-node:
-	docker rmi ${REGISTRY}/${PROJECT}-${NODE}:${TAG}
+	docker rmi ${PROJECT}-${NODE}:${TAG}
 
 clean-image-controller:
-	docker rmi ${REGISTRY}/${PROJECT}-${CONTROLLER}:${TAG}
+	docker rmi ${PROJECT}-${CONTROLLER}:${TAG}
 
 clean-image-extender:
-	docker rmi ${REGISTRY}/${PROJECT}-${EXTENDER}:${TAG}
+	docker rmi ${PROJECT}-${EXTENDER}:${TAG}
 
 clean-image-extender-patcher:
-	docker rmi ${REGISTRY}/${PROJECT}-${EXTENDER_PATCHER}:${TAG}
+	docker rmi ${PROJECT}-${EXTENDER_PATCHER}:${TAG}
 
 clean-image-scheduler:
-	docker rmi ${REGISTRY}/${PROJECT}-${SCHEDULER}:${TAG}
+	docker rmi ${PROJECT}-${SCHEDULER}:${TAG}
 
 clean-image-node-controller:
-	docker rmi ${REGISTRY}/${PROJECT}-${CSI_BM_NODE}:${TAG}
+	docker rmi ${PROJECT}-${CSI_BM_NODE}:${TAG}
