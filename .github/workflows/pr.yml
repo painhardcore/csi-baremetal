@@ -147,6 +147,7 @@ jobs:
         
     - name: Build images
       run: |
+        make DRIVE_MANAGER_REGISTRY=docker.pkg.github.com/${GITHUB_REPOSITORY} TYPE=basemgr images
         make images DRIVE_MANAGER_TYPE=loopbackmgr REGISTRY=docker.pkg.github.com/${GITHUB_REPOSITORY}
         docker images
     - name: Push images
