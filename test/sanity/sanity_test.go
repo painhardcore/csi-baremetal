@@ -39,6 +39,7 @@ import (
 	"github.com/dell/csi-baremetal/pkg/base/rpc"
 	"github.com/dell/csi-baremetal/pkg/controller"
 	"github.com/dell/csi-baremetal/pkg/mocks"
+	mocklu "github.com/dell/csi-baremetal/pkg/mocks/linuxutils"
 	"github.com/dell/csi-baremetal/pkg/mocks/provisioners"
 	"github.com/dell/csi-baremetal/pkg/node"
 	p "github.com/dell/csi-baremetal/pkg/node/provisioners"
@@ -49,7 +50,7 @@ var (
 	nodeEndpoint       = "unix:///tmp/node.sock"
 	targetSanityPath   = os.TempDir() + "/csi-mount/target"
 	stagingSanityPath  = os.TempDir() + "/csi-staging"
-	driverName         = "baremetal-csi-plugin"
+	driverName         = "csi-baremetal-driver"
 	version            = "test"
 	testNs             = "default"
 	nodeId             = "localhost"
@@ -169,6 +170,9 @@ func prepareNodeMock(kubeClient *k8s.KubeClient, log *logrus.Logger) *node.CSINo
 		new(mocks.NoOpRecorder), featureconfig.NewFeatureConfig())
 
 	nodeService.VolumeManager = *node.NewVolumeManager(c, e, log, kubeClient, kubeClient, new(mocks.NoOpRecorder), nodeId)
+
+	listBlk := mocklu.GetMockWrapLsblk("/some/path")
+	nodeService.VolumeManager.SetListBlk(listBlk)
 
 	pMock := provisioners.GetMockProvisionerSuccess("/some/path")
 	nodeService.SetProvisioners(map[p.VolumeType]p.Provisioner{p.DriveBasedVolumeType: pMock})

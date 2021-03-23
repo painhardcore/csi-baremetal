@@ -21,6 +21,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -51,6 +52,8 @@ type VolumeOperations interface {
 	DeleteVolume(ctx context.Context, volumeID string) error
 	UpdateCRsAfterVolumeDeletion(ctx context.Context, volumeID string)
 	WaitStatus(ctx context.Context, volumeID string, statuses ...string) error
+	ExpandVolume(ctx context.Context, volume *volumecrd.Volume, requiredBytes int64) error
+	UpdateCRsAfterVolumeExpansion(ctx context.Context, volID string, requiredBytes int64)
 }
 
 // VolumeOperationsImpl is the basic implementation of VolumeOperations interface
@@ -58,6 +61,7 @@ type VolumeOperationsImpl struct {
 	acProvider             AvailableCapacityOperations
 	k8sClient              *k8s.KubeClient
 	capacityManagerBuilder capacityplanner.CapacityManagerBuilder
+	crHelper               *k8s.CRHelper
 
 	metrics        metrics.Statistic
 	cache          cache.Interface
@@ -81,6 +85,7 @@ func NewVolumeOperationsImpl(k8sClient *k8s.KubeClient, logger *logrus.Logger, c
 	}
 	vo := &VolumeOperationsImpl{
 		k8sClient:              k8sClient,
+		crHelper:               k8s.NewCRHelper(k8sClient, logger),
 		acProvider:             NewACOperationsImpl(k8sClient, logger),
 		log:                    logger.WithField("component", "VolumeOperationsImpl"),
 		featureChecker:         featureConf,
@@ -173,14 +178,14 @@ func (vo *VolumeOperationsImpl) CreateVolume(ctx context.Context, v api.Volume) 
 
 		origAC := ac
 		if ac.Spec.StorageClass != v.StorageClass && util.IsStorageClassLVG(v.StorageClass) {
-			// we need to create reservation for newly created LVG AC before we sent LVG AC to kube-api
+			// we need to create reservation for newly created LogicalVolumeGroup AC before we sent LogicalVolumeGroup AC to kube-api
 			// this required to prevent race condition between csi-controller and scheduler extender
 			newACName := uuid.New().String()
 			if err := resHelper.ExtendReservations(ctx, origAC, newACName); err != nil {
 				return nil, status.Errorf(codes.Internal,
 					"failed to extender reservation after AC conversion %v", err)
 			}
-			// AC needs to be converted to LVG AC, LVG doesn't exist yet
+			// AC needs to be converted to LogicalVolumeGroup AC, LogicalVolumeGroup doesn't exist yet
 			if ac = vo.acProvider.RecreateACToLVGSC(ctxWithID, newACName, v.StorageClass, *ac); ac == nil {
 				return nil, status.Errorf(codes.Internal,
 					"unable to prepare underlying storage for storage class %s", v.StorageClass)
@@ -299,7 +304,7 @@ func (vo *VolumeOperationsImpl) DeleteVolume(ctx context.Context, volumeID strin
 }
 
 // UpdateCRsAfterVolumeDeletion should considered as a second step in DeleteVolume,
-// remove Volume CR and if volume was in LVG SC - update corresponding AC CR
+// remove Volume CR and if volume was in LogicalVolumeGroup SC - update corresponding AC CR
 // does not return anything because that method does not change real drive on the node
 func (vo *VolumeOperationsImpl) UpdateCRsAfterVolumeDeletion(ctx context.Context, volumeID string) {
 	defer vo.metrics.EvaluateDurationForMethod("UpdateCRsAfterVolumeDeletion")()
@@ -352,22 +357,22 @@ func (vo *VolumeOperationsImpl) UpdateCRsAfterVolumeDeletion(ctx context.Context
 		return
 	}
 
-	// for LVG SCs we need to delete AC CR when no volumes remain to avoid new allocations since
-	// underlying LVG CR is destroying. For other SC just to increase size
+	// for LogicalVolumeGroup SCs we need to delete AC CR when no volumes remain to avoid new allocations since
+	// underlying LogicalVolumeGroup CR is destroying. For other SC just to increase size
 	isDeleted := false
-	lvg := &lvgcrd.LVG{}
+	lvg := &lvgcrd.LogicalVolumeGroup{}
 	if util.IsStorageClassLVG(volumeCR.Spec.StorageClass) {
 		if err = vo.k8sClient.ReadCR(context.Background(), volumeCR.Spec.Location, "", lvg); err != nil {
-			ll.Errorf("Unable to get LVG %s: %v", volumeCR.Spec.Location, err)
+			ll.Errorf("Unable to get LogicalVolumeGroup %s: %v", volumeCR.Spec.Location, err)
 			return
 		}
 
 		if isDeleted, err = vo.deleteLVGIfVolumesNotExistOrUpdate(lvg, volumeCR.Name, &acCR); err != nil {
-			ll.Errorf("Unable to remove volume reference from LVG %s: %v", volumeCR.Spec.Location, err)
+			ll.Errorf("Unable to remove volume reference from LogicalVolumeGroup %s: %v", volumeCR.Spec.Location, err)
 		}
 	}
 
-	// if LVG wasn't deleted increase AC size
+	// if LogicalVolumeGroup wasn't deleted increase AC size
 	if !isDeleted {
 		// Increase size of AC using volume size
 		acCR.Spec.Size += volumeCR.Spec.Size
@@ -424,12 +429,124 @@ func (vo *VolumeOperationsImpl) WaitStatus(ctx context.Context, volumeID string,
 	}
 }
 
-// deleteLVGIfVolumesNotExistOrUpdate tries to remove volume ID into VolumeRefs slice from LVG struct
-// and updates according LVG
-// If VolumeRefs length equals 0, then deletes according AC and LVG
-// Receives LVG and volumeID of a Volume CR which should be removed
-// Returns true if LVG CR was deleted and false otherwise, error if something went wrong
-func (vo *VolumeOperationsImpl) deleteLVGIfVolumesNotExistOrUpdate(lvg *lvgcrd.LVG,
+// ExpandVolume updates Volume status to Resizing to trigger expansion in reconcile, if volume has already had status
+// Resizing or Resized, function doesn't do anything. In case of statuses beside VolumeReady, Created, Published function return error
+// Receive golang context, volume CR, requiredBytes as int
+// Return volume spec, error
+func (vo *VolumeOperationsImpl) ExpandVolume(ctx context.Context, volume *volumecrd.Volume, requiredBytes int64) error {
+	defer vo.metrics.EvaluateDurationForMethod("ExpandVolume")()
+	ll := vo.log.WithFields(logrus.Fields{
+		"method":   "ExpandVolume",
+		"volumeID": volume.Spec.Id,
+	})
+	currStatus := volume.Spec.CSIStatus
+	switch currStatus {
+	case apiV1.Resizing, apiV1.Resized:
+		ll.Debug("Volume is already expanding")
+	case apiV1.VolumeReady, apiV1.Created, apiV1.Published:
+		if !util.IsStorageClassLVG(volume.Spec.StorageClass) {
+			return status.Error(codes.FailedPrecondition,
+				fmt.Sprintf("StorageClass %s doesn't support resizing", volume.Spec.StorageClass))
+		}
+		capacity, err := vo.crHelper.GetACByLocation(volume.Spec.Location)
+		if err != nil {
+			ll.Errorf("Failed to get AC by location %s", volume.Spec.Location)
+			return status.Error(codes.Internal, "Unable to read AC")
+		}
+
+		acSize := requiredBytes - volume.Spec.Size
+		if capacity.Spec.Size < acSize {
+			return status.Error(codes.OutOfRange,
+				fmt.Sprintf("Not enough capacity to expand volume: requested - %d, available - %d", requiredBytes, capacity.Spec.Size))
+		}
+		capacity.Spec.Size -= acSize
+		if err := vo.k8sClient.UpdateCRWithAttempts(ctx, capacity, 5); err != nil {
+			ll.Errorf("Failed to update AC, error: %v", err)
+			return status.Error(codes.Internal, "Unable to reserve AC")
+		}
+
+		if volume.Annotations == nil {
+			volume.Annotations = make(map[string]string)
+		}
+		volume.Annotations[apiV1.VolumePreviousStatus] = currStatus
+		volume.Annotations[apiV1.VolumePreviousCapacity] = strconv.FormatInt(volume.Spec.Size, 10)
+		volume.Spec.CSIStatus = apiV1.Resizing
+		volume.Spec.Size = requiredBytes
+
+		if err := vo.k8sClient.UpdateCRWithAttempts(ctx, volume, 5); err != nil {
+			ll.Errorf("Failed to update volume, error: %v", err)
+			return status.Error(codes.Internal, "Unable to update volume")
+		}
+	default:
+		return status.Errorf(codes.FailedPrecondition, "Volume in status %s can't be expanded", volume.Spec.CSIStatus)
+	}
+	return nil
+}
+
+// UpdateCRsAfterVolumeExpansion update volume and AC crs after volume expansion
+// Receive golang context, volume spec
+// Return error
+func (vo *VolumeOperationsImpl) UpdateCRsAfterVolumeExpansion(ctx context.Context, volID string, requiredBytes int64) {
+	defer vo.metrics.EvaluateDurationForMethod("ExpandVolume")()
+	ll := vo.log.WithFields(logrus.Fields{
+		"method":   "UpdateCRsAfterVolumeExpansion",
+		"volumeID": volID,
+	})
+	var (
+		namespace string
+		err       error
+		volume    = &volumecrd.Volume{}
+	)
+	namespace, err = vo.cache.Get(volID)
+	if err != nil {
+		ll.Errorf("Failed to get namespace from cache, error: %v", err)
+		return
+	}
+	if err = vo.k8sClient.ReadCR(ctx, volID, namespace, volume); err != nil {
+		ll.Errorf("Failed to read volume: %v", err)
+		return
+	}
+	switch volume.Spec.CSIStatus {
+	case apiV1.Failed:
+		capacity, err := strconv.ParseInt(volume.Annotations[apiV1.VolumePreviousCapacity], 10, 64)
+		if err != nil {
+			ll.Errorf("Failed to convert volume annotation %s to int, error : %v", apiV1.VolumePreviousCapacity, err)
+			return
+		}
+		volume.Spec.Size = capacity
+		ac, err := vo.crHelper.GetACByLocation(volume.Spec.Location)
+		if err != nil {
+			ll.Errorf("Failed to read AC: %v", err)
+		} else {
+			acSize := requiredBytes - volume.Spec.Size
+			ac.Spec.Size += acSize
+			if err = vo.k8sClient.UpdateCRWithAttempts(ctx, ac, 5); err != nil {
+				ll.Errorf("Failed to update AC: %v", err)
+			}
+		}
+	case apiV1.Resized:
+		if _, ok := volume.Annotations[apiV1.VolumePreviousStatus]; !ok {
+			ll.Errorf("Failed to set previous status, annotation %s wasn't found for volume %s", apiV1.VolumePreviousStatus, volID)
+		} else {
+			volume.Spec.CSIStatus = volume.Annotations[apiV1.VolumePreviousStatus]
+		}
+	default:
+		ll.Warnf("Volume status is %s, expected %s or %s", volume.Spec.CSIStatus, apiV1.Resized, apiV1.Failed)
+		return
+	}
+	delete(volume.Annotations, apiV1.VolumePreviousCapacity)
+	delete(volume.Annotations, apiV1.VolumePreviousStatus)
+	if updateErr := vo.k8sClient.UpdateCR(ctx, volume); updateErr != nil {
+		ll.Error("Unable to set new status for volume")
+	}
+}
+
+// deleteLVGIfVolumesNotExistOrUpdate tries to remove volume ID into VolumeRefs slice from LogicalVolumeGroup struct
+// and updates according LogicalVolumeGroup
+// If VolumeRefs length equals 0, then deletes according AC and LogicalVolumeGroup
+// Receives LogicalVolumeGroup and volumeID of a Volume CR which should be removed
+// Returns true if LogicalVolumeGroup CR was deleted and false otherwise, error if something went wrong
+func (vo *VolumeOperationsImpl) deleteLVGIfVolumesNotExistOrUpdate(lvg *lvgcrd.LogicalVolumeGroup,
 	volID string, ac *accrd.AvailableCapacity) (bool, error) {
 	log := vo.log.WithFields(logrus.Fields{
 		"method":   "deleteLVGIfVolumesNotExistOrUpdate",
@@ -437,7 +554,7 @@ func (vo *VolumeOperationsImpl) deleteLVGIfVolumesNotExistOrUpdate(lvg *lvgcrd.L
 	})
 
 	drivesUUIDs := vo.k8sClient.GetSystemDriveUUIDs()
-	// if only one volume remains - remove AC first and LVG then
+	// if only one volume remains - remove AC first and LogicalVolumeGroup then
 	if len(lvg.Spec.VolumeRefs) == 1 && !util.ContainsString(drivesUUIDs, lvg.Spec.Locations[0]) {
 		if err := vo.k8sClient.DeleteCR(context.Background(), ac); err != nil {
 			log.Errorf("Unable to delete AC %s: %v", ac.Name, err)
@@ -449,7 +566,7 @@ func (vo *VolumeOperationsImpl) deleteLVGIfVolumesNotExistOrUpdate(lvg *lvgcrd.L
 	// search for volume index
 	for i, id := range lvg.Spec.VolumeRefs {
 		if volID == id {
-			log.Debugf("Remove volume %s from LVG %v", volID, lvg)
+			log.Debugf("Remove volume %s from LogicalVolumeGroup %v", volID, lvg)
 			l := len(lvg.Spec.VolumeRefs)
 			lvg.Spec.VolumeRefs[i] = lvg.Spec.VolumeRefs[l-1]
 			lvg.Spec.VolumeRefs = lvg.Spec.VolumeRefs[:l-1]
@@ -458,8 +575,8 @@ func (vo *VolumeOperationsImpl) deleteLVGIfVolumesNotExistOrUpdate(lvg *lvgcrd.L
 		}
 	}
 
-	log.Errorf("Reference to volume %s in LVG %v not found", volID, lvg)
-	return false, errors.New("LVG CR wasn't updated")
+	log.Errorf("Reference to volume %s in LogicalVolumeGroup %v not found", volID, lvg)
+	return false, errors.New("lvg CR wasn't updated")
 }
 
 // fillCache tries to fill volume/namespace cache after VolumeOperationsImpl initialization

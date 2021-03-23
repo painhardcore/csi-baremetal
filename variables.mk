@@ -1,10 +1,11 @@
 # project name
-PROJECT          := baremetal-csi-plugin
+PROJECT          := csi-baremetal
 
 ### file paths
-PLUGIN_CHART_PATH		:= charts/baremetal-csi-plugin
-EXTENDER_CHART_PATH		:= charts/scheduler-extender
-OPERATOR_CHART_PATH		:= charts/csibm-operator
+DRIVER_CHART_PATH		:= charts/csi-baremetal-driver
+OPERATOR_CHART_PATH		:= charts/csi-baremetal-operator
+SCHEDULER_CHART_PATH	:= charts/csi-baremetal-scheduler
+EXTENDER_CHART_PATH		:= charts/csi-baremetal-scheduler-extender
 
 ### version
 MAJOR            := 0
@@ -22,6 +23,7 @@ BRANCH           := $(shell git rev-parse --abbrev-ref HEAD)
 
 ### third-party components version
 CSI_PROVISIONER_TAG := v1.6.0
+CSI_RESIZER_TAG     := v1.1.0
 CSI_REGISTRAR_TAG   := v1.0.1-gke.0
 CSI_ATTACHER_TAG    := v1.0.1
 LIVENESS_PROBE_TAG  := v2.1.0
@@ -40,7 +42,7 @@ CONTROLLER       := controller
 SCHEDULER        := scheduler
 EXTENDER         := extender
 EXTENDER_PATCHER := scheduler-patcher
-CSI_BM_NODE      := csibmnode
+OPERATOR      	 := operator
 PLUGIN           := plugin
 
 BASE_DRIVE_MGR     := basemgr
@@ -50,6 +52,7 @@ DRIVE_MANAGER_TYPE := ${BASE_DRIVE_MGR}
 # external components
 CSI_PROVISIONER := csi-provisioner
 CSI_REGISTRAR   := csi-node-driver-registrar
+CSI_RESIZER     := csi-resizer
 CSI_ATTACHER    := csi-attacher
 LIVENESS_PROBE  := livenessprobe
 BUSYBOX         := busybox

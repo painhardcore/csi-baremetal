@@ -20,14 +20,13 @@ const (
 	VolumeKind                       = "Volume"
 	AvailableCapacityKind            = "AvailableCapacity"
 	AvailableCapacityReservationKind = "AvailableCapacityReservation"
-	LVGKind                          = "LVG"
+	LVGKind                          = "LogicalVolumeGroup"
 	DriveKind                        = "Drive"
 	CSIBMNodeKind                    = "Node"
 
-	Version = "v1"
-	// TODO: change value, https://github.com/dell/csi-baremetal/issues/134
-	CSICRsGroupVersion = "baremetal-csi.dellemc.com"
-	APIV1Version       = "baremetal-csi.dellemc.com/v1"
+	Version            = "v1"
+	CSICRsGroupVersion = "csi-baremetal.dell.com"
+	APIV1Version       = "csi-baremetal.dell.com/v1"
 
 	// CSI statuses
 	Creating    = "CREATING"
@@ -38,6 +37,8 @@ const (
 	Removed     = "REMOVED"
 	Failed      = "FAILED"
 	Empty       = ""
+	Resizing    = "RESIZING"
+	Resized     = "RESIZED"
 
 	// Health statuses
 	HealthUnknown = "UNKNOWN"
@@ -88,6 +89,9 @@ const (
 	VolumeAnnotationReleaseFailed = "failed"
 	VolumeAnnotationReleaseStatus = "status"
 
+	//Volume expansion annotations
+	VolumePreviousStatus   = "expansion/previous-status"
+	VolumePreviousCapacity = "expansion/previous-capacity"
 	// TODO Mount status?
 
 	// Volume mode
@@ -116,4 +120,6 @@ const (
 
 	LocateStatusOn  = int32(1)
 	LocateStatusOff = int32(0)
+
+	DockerImageKernelVersion = "5.4"
 )
