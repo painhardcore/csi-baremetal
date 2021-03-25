@@ -23,6 +23,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	k8sCl "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
+
+	//nolint:staticcheck
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	apiV1 "github.com/dell/csi-baremetal/api/v1"
